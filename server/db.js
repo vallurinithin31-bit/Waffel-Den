@@ -1,24 +1,49 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+const isVercel = Boolean(process.env.VERCEL);
+let dataDir;
+let dbPath;
+
+if (isVercel) {
+  dataDir = os.tmpdir();
+  dbPath = path.join(dataDir, 'waffelden.db');
+
+  // If cold-starting in Vercel lambda and db doesn't exist in /tmp, copy template if available
+  const templatePath = path.join(__dirname, 'data', 'waffelden.db');
+  if (!fs.existsSync(dbPath) && fs.existsSync(templatePath)) {
+    try {
+      fs.copyFileSync(templatePath, dbPath);
+    } catch (e) {
+      console.warn('Could not copy template db, will initialize fresh:', e);
+    }
+  }
+} else {
+  dataDir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  dbPath = path.join(dataDir, 'waffelden.db');
 }
 
-const dbPath = path.join(dataDir, 'waffelden.db');
 export const db = new DatabaseSync(dbPath);
+export { dbPath };
 
-// Enable WAL mode for performance & concurrency, and foreign keys
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  PRAGMA foreign_keys = ON;
-`);
+// Enable WAL mode locally, or memory journal on serverless
+try {
+  db.exec(`
+    PRAGMA journal_mode = ${isVercel ? 'MEMORY' : 'WAL'};
+    PRAGMA foreign_keys = ON;
+  `);
+} catch (e) {
+  console.warn('Pragma set warning:', e);
+}
 
 // Helper to get current Indian Standard Time (IST) strings
 export function getISTTimestamp() {

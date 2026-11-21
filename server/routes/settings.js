@@ -1,5 +1,5 @@
 import express from 'express';
-import { db, getISTTimestamp, initDatabase } from '../db.js';
+import { db, getISTTimestamp, initDatabase, dbPath } from '../db.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -86,7 +86,6 @@ router.get('/backup/json', (req, res) => {
 // Download actual SQLite DB file
 router.get('/backup/db', (req, res) => {
   try {
-    const dbPath = path.join(__dirname, '..', 'data', 'waffelden.db');
     if (!fs.existsSync(dbPath)) {
       return res.status(404).json({ error: 'Database file not found' });
     }

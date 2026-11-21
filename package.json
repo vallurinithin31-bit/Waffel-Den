@@ -3,12 +3,18 @@
   "version": "1.0.0",
   "description": "Complete Waffle Shop Order Management, Sales & Profit Analytics App",
   "type": "module",
+  "workspaces": [
+    "client"
+  ],
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "server": "node server/index.js",
-    "client": "npm --prefix client run dev",
-    "build": "npm --prefix client run build"
+    "client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client"
+  },
+  "engines": {
+    "node": "22.x"
   },
   "dependencies": {
     "cors": "^2.8.5",
