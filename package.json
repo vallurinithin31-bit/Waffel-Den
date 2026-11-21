@@ -14,7 +14,7 @@
     "build": "npm run build --prefix client"
   },
   "engines": {
-    "node": "22.x"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "cors": "^2.8.5",
