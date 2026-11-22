@@ -14,6 +14,7 @@ import analyticsRouter from './routes/analytics.js';
 import reportsRouter from './routes/reports.js';
 import settingsRouter from './routes/settings.js';
 import syncRouter from './routes/sync.js';
+import authRouter, { verifyToken } from './routes/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,27 @@ app.use((req, res, next) => {
   next();
 });
 
+// User Authentication & Scoping Middleware
+app.use((req, res, next) => {
+  let userId = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    const decoded = verifyToken(token);
+    if (decoded?.userId) {
+      userId = decoded.userId;
+    }
+  }
+  if (!userId && req.headers['x-user-id']) {
+    const parsed = parseInt(req.headers['x-user-id'], 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      userId = parsed;
+    }
+  }
+  req.userId = userId || 1;
+  next();
+});
+
 // Helper to mount routes both with and without '/api' prefix (handles Vercel serverless url variations)
 const mount = (routePath, router) => {
   app.use(`/api/${routePath}`, router);
@@ -49,6 +71,7 @@ const mount = (routePath, router) => {
 };
 
 // API Routes
+mount('auth', authRouter);
 mount('products', productsRouter);
 mount('orders', ordersRouter);
 mount('expenses', expensesRouter);

@@ -14,8 +14,9 @@ function csvCell(val) {
 router.get('/export/orders', (req, res) => {
   try {
     const { start_date, end_date } = req.query;
-    let query = 'SELECT * FROM orders WHERE 1=1';
-    const params = [];
+    const uid = req.userId || 1;
+    let query = 'SELECT * FROM orders WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))';
+    const params = [uid, uid];
 
     if (start_date) {
       query += ' AND order_date >= ?';
@@ -97,6 +98,7 @@ router.get('/export/orders', (req, res) => {
 router.get('/export/daily-summary', (req, res) => {
   try {
     const { start_date, end_date } = req.query;
+    const uid = req.userId || 1;
     let orderQuery = `
       SELECT
         order_date,
@@ -110,9 +112,9 @@ router.get('/export/daily-summary', (req, res) => {
         SUM(CASE WHEN order_status != 'Cancelled' THEN total_cogs ELSE 0 END) as cogs,
         SUM(CASE WHEN order_status != 'Cancelled' THEN gross_profit ELSE 0 END) as gross_profit
       FROM orders
-      WHERE 1=1
+      WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))
     `;
-    const params = [];
+    const params = [uid, uid];
     if (start_date) {
       orderQuery += ' AND order_date >= ?';
       params.push(start_date);
@@ -131,9 +133,10 @@ router.get('/export/daily-summary', (req, res) => {
         SUM(CASE WHEN included_in_cogs = 0 THEN amount ELSE 0 END) as operating_expenses,
         SUM(amount) as total_expenses
       FROM expenses
+      WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))
       GROUP BY date
     `;
-    const dailyExpenses = db.prepare(expenseQuery).all();
+    const dailyExpenses = db.prepare(expenseQuery).all(uid, uid);
     const expMap = {};
     for (const e of dailyExpenses) {
       expMap[e.date] = e;
@@ -195,6 +198,7 @@ router.get('/export/daily-summary', (req, res) => {
 router.get('/export/products', (req, res) => {
   try {
     const { start_date, end_date } = req.query;
+    const uid = req.userId || 1;
     let query = `
       SELECT
         oi.product_name,
@@ -207,8 +211,9 @@ router.get('/export/products', (req, res) => {
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE o.order_status != 'Cancelled'
+        AND (o.user_id = ? OR (o.user_id IS NULL AND ? = 1))
     `;
-    const params = [];
+    const params = [uid, uid];
     if (start_date) {
       query += ' AND o.order_date >= ?';
       params.push(start_date);
@@ -259,8 +264,9 @@ router.get('/export/products', (req, res) => {
 router.get('/export/expenses', (req, res) => {
   try {
     const { start_date, end_date } = req.query;
-    let query = 'SELECT * FROM expenses WHERE 1=1';
-    const params = [];
+    const uid = req.userId || 1;
+    let query = 'SELECT * FROM expenses WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))';
+    const params = [uid, uid];
     if (start_date) {
       query += ' AND date >= ?';
       params.push(start_date);

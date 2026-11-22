@@ -7,8 +7,8 @@ const router = express.Router();
 router.get('/', (req, res) => {
   try {
     const { start_date, end_date, category } = req.query;
-    let query = 'SELECT * FROM expenses WHERE 1=1';
-    const params = [];
+    let query = 'SELECT * FROM expenses WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))';
+    const params = [req.userId, req.userId];
 
     if (start_date) {
       query += ' AND date >= ?';
@@ -38,8 +38,8 @@ router.get('/', (req, res) => {
 router.get('/summary', (req, res) => {
   try {
     const { start_date, end_date } = req.query;
-    let query = 'SELECT * FROM expenses WHERE 1=1';
-    const params = [];
+    let query = 'SELECT * FROM expenses WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))';
+    const params = [req.userId, req.userId];
 
     if (start_date) {
       query += ' AND date >= ?';
@@ -111,8 +111,8 @@ router.post('/', (req, res) => {
     const info = db.prepare(`
       INSERT INTO expenses (
         date, amount, category, description, payment_method,
-        paid_from_cash_register, included_in_cogs, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        paid_from_cash_register, included_in_cogs, created_at, user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       expDate,
       Number(amt.toFixed(2)),
@@ -121,7 +121,8 @@ router.post('/', (req, res) => {
       payment_method,
       paid_from_cash_register ? 1 : 0,
       included_in_cogs ? 1 : 0,
-      iso
+      iso,
+      req.userId
     );
 
     const created = db.prepare('SELECT * FROM expenses WHERE id = ?').get(info.lastInsertRowid);

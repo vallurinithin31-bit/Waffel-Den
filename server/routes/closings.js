@@ -9,12 +9,13 @@ router.get('/preview', (req, res) => {
     const { date: reqDate } = req.query;
     const { date: todayDate } = getISTTimestamp();
     const queryDate = reqDate || todayDate;
+    const uid = req.userId;
 
     // Check if day is already closed
-    const existingClosing = db.prepare('SELECT * FROM daily_closings WHERE closing_date = ?').get(queryDate);
+    const existingClosing = db.prepare('SELECT * FROM daily_closings WHERE closing_date = ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))').get(queryDate, uid, uid);
 
     // Get orders for this date
-    const orders = db.prepare('SELECT * FROM orders WHERE order_date = ?').all(queryDate);
+    const orders = db.prepare('SELECT * FROM orders WHERE order_date = ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))').all(queryDate, uid, uid);
 
     let totalOrders = orders.length;
     let completedOrders = 0;
@@ -65,7 +66,7 @@ router.get('/preview', (req, res) => {
     }
 
     // Get expenses for this date
-    const expenses = db.prepare('SELECT * FROM expenses WHERE date = ?').all(queryDate);
+    const expenses = db.prepare('SELECT * FROM expenses WHERE date = ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))').all(queryDate, uid, uid);
     let cashExpenses = 0;
     let operatingExpenses = 0;
 
@@ -129,11 +130,12 @@ router.post('/finalize', (req, res) => {
 
     const { iso, date: todayDate } = getISTTimestamp();
     const targetDate = closing_date || todayDate;
+    const uid = req.userId;
 
     // Get live calculated figures for the day
-    const orders = db.prepare('SELECT * FROM orders WHERE order_date = ? AND order_status != ?').all(targetDate, 'Cancelled');
-    const allOrdersCount = db.prepare('SELECT COUNT(*) as count FROM orders WHERE order_date = ?').get(targetDate).count;
-    const cancelledCount = db.prepare("SELECT COUNT(*) as count FROM orders WHERE order_date = ? AND order_status = 'Cancelled'").get(targetDate).count;
+    const orders = db.prepare('SELECT * FROM orders WHERE order_date = ? AND order_status != ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))').all(targetDate, 'Cancelled', uid, uid);
+    const allOrdersCount = db.prepare('SELECT COUNT(*) as count FROM orders WHERE order_date = ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))').get(targetDate, uid, uid).count;
+    const cancelledCount = db.prepare("SELECT COUNT(*) as count FROM orders WHERE order_date = ? AND order_status = 'Cancelled' AND (user_id = ? OR (user_id IS NULL AND ? = 1))").get(targetDate, uid, uid).count;
 
     let cashSales = 0;
     let upiSales = 0;
@@ -153,7 +155,7 @@ router.post('/finalize', (req, res) => {
       grossProfit += ord.gross_profit;
     }
 
-    const expenses = db.prepare('SELECT * FROM expenses WHERE date = ?').all(targetDate);
+    const expenses = db.prepare('SELECT * FROM expenses WHERE date = ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))').all(targetDate, uid, uid);
     let cashExpenses = 0;
     let operatingExpenses = 0;
     for (const exp of expenses) {
@@ -169,57 +171,55 @@ router.post('/finalize', (req, res) => {
     const netProfit = Number((grossProfit - operatingExpenses).toFixed(2));
 
     // Upsert daily closing
-    db.prepare(`
-      INSERT INTO daily_closings (
-        closing_date, opening_cash, cash_sales, upi_sales, card_sales, other_sales,
-        cash_expenses, cash_refunds, expected_closing_cash, actual_closing_cash,
-        cash_difference, total_orders, completed_orders, cancelled_orders,
-        net_sales, gross_profit, operating_expenses, net_profit, closing_notes, closed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(closing_date) DO UPDATE SET
-        opening_cash = excluded.opening_cash,
-        cash_sales = excluded.cash_sales,
-        upi_sales = excluded.upi_sales,
-        card_sales = excluded.card_sales,
-        other_sales = excluded.other_sales,
-        cash_expenses = excluded.cash_expenses,
-        cash_refunds = excluded.cash_refunds,
-        expected_closing_cash = excluded.expected_closing_cash,
-        actual_closing_cash = excluded.actual_closing_cash,
-        cash_difference = excluded.cash_difference,
-        total_orders = excluded.total_orders,
-        completed_orders = excluded.completed_orders,
-        cancelled_orders = excluded.cancelled_orders,
-        net_sales = excluded.net_sales,
-        gross_profit = excluded.gross_profit,
-        operating_expenses = excluded.operating_expenses,
-        net_profit = excluded.net_profit,
-        closing_notes = excluded.closing_notes,
-        closed_at = excluded.closed_at
-    `).run(
-      targetDate,
-      openCash,
-      Number(cashSales.toFixed(2)),
-      Number(upiSales.toFixed(2)),
-      Number(cardSales.toFixed(2)),
-      Number(otherSales.toFixed(2)),
-      Number(cashExpenses.toFixed(2)),
-      refunds,
-      expectedCash,
-      actualCash,
-      difference,
-      allOrdersCount,
-      orders.length,
-      cancelledCount,
-      Number(netSales.toFixed(2)),
-      Number(grossProfit.toFixed(2)),
-      Number(operatingExpenses.toFixed(2)),
-      netProfit,
-      closing_notes.trim(),
-      iso
-    );
+    try {
+      db.prepare(`
+        INSERT INTO daily_closings (
+          closing_date, opening_cash, cash_sales, upi_sales, card_sales, other_sales,
+          cash_expenses, cash_refunds, expected_closing_cash, actual_closing_cash,
+          cash_difference, total_orders, completed_orders, cancelled_orders,
+          net_sales, gross_profit, operating_expenses, net_profit, closing_notes, closed_at, user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        targetDate,
+        openCash,
+        Number(cashSales.toFixed(2)),
+        Number(upiSales.toFixed(2)),
+        Number(cardSales.toFixed(2)),
+        Number(otherSales.toFixed(2)),
+        Number(cashExpenses.toFixed(2)),
+        refunds,
+        expectedCash,
+        actualCash,
+        difference,
+        allOrdersCount,
+        orders.length,
+        cancelledCount,
+        Number(netSales.toFixed(2)),
+        Number(grossProfit.toFixed(2)),
+        Number(operatingExpenses.toFixed(2)),
+        netProfit,
+        closing_notes.trim(),
+        iso,
+        uid
+      );
+    } catch (e) {
+      // If conflict, update
+      db.prepare(`
+        UPDATE daily_closings SET
+          opening_cash = ?, cash_sales = ?, upi_sales = ?, card_sales = ?, other_sales = ?,
+          cash_expenses = ?, cash_refunds = ?, expected_closing_cash = ?, actual_closing_cash = ?,
+          cash_difference = ?, total_orders = ?, completed_orders = ?, cancelled_orders = ?,
+          net_sales = ?, gross_profit = ?, operating_expenses = ?, net_profit = ?, closing_notes = ?, closed_at = ?
+        WHERE closing_date = ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))
+      `).run(
+        openCash, Number(cashSales.toFixed(2)), Number(upiSales.toFixed(2)), Number(cardSales.toFixed(2)), Number(otherSales.toFixed(2)),
+        Number(cashExpenses.toFixed(2)), refunds, expectedCash, actualCash, difference, allOrdersCount, orders.length, cancelledCount,
+        Number(netSales.toFixed(2)), Number(grossProfit.toFixed(2)), Number(operatingExpenses.toFixed(2)), netProfit, closing_notes.trim(), iso,
+        targetDate, uid, uid
+      );
+    }
 
-    const record = db.prepare('SELECT * FROM daily_closings WHERE closing_date = ?').get(targetDate);
+    const record = db.prepare('SELECT * FROM daily_closings WHERE closing_date = ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))').get(targetDate, uid, uid);
     res.json({ success: true, record });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -229,7 +229,8 @@ router.post('/finalize', (req, res) => {
 // List historical daily closing records
 router.get('/history', (req, res) => {
   try {
-    const records = db.prepare('SELECT * FROM daily_closings ORDER BY closing_date DESC LIMIT 60').all();
+    const uid = req.userId;
+    const records = db.prepare('SELECT * FROM daily_closings WHERE (user_id = ? OR (user_id IS NULL AND ? = 1)) ORDER BY closing_date DESC LIMIT 60').all(uid, uid);
     res.json(records);
   } catch (err) {
     res.status(500).json({ error: err.message });

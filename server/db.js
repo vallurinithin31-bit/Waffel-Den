@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -289,7 +290,8 @@ export function initDatabase() {
     -- Daily Closing records
     CREATE TABLE IF NOT EXISTS daily_closings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      closing_date TEXT UNIQUE NOT NULL,
+      closing_date TEXT NOT NULL,
+      user_id INTEGER,
       opening_cash REAL DEFAULT 0,
       cash_sales REAL DEFAULT 0,
       upi_sales REAL DEFAULT 0,
@@ -310,10 +312,75 @@ export function initDatabase() {
       closing_notes TEXT,
       closed_at TEXT NOT NULL
     );
+
+    -- Users & Accounts table
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE,
+      password_hash TEXT NOT NULL,
+      salt TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT DEFAULT 'owner',
+      shop_name TEXT DEFAULT 'Waffel Den',
+      created_at TEXT NOT NULL
+    );
+
+    -- User-specific settings table
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      PRIMARY KEY (user_id, key)
+    );
   `);
 
+  // Safely migrate existing tables to have user_id column
+  const addColumnIfNotExists = (table, column, colDef) => {
+    try {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+      if (!cols.some(c => c.name === column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${colDef}`);
+      }
+    } catch (err) {
+      console.warn(`Could not add column ${column} to ${table}:`, err.message);
+    }
+  };
+
+  addColumnIfNotExists('orders', 'user_id', 'INTEGER');
+  addColumnIfNotExists('expenses', 'user_id', 'INTEGER');
+  addColumnIfNotExists('products', 'user_id', 'INTEGER');
+  addColumnIfNotExists('daily_closings', 'user_id', 'INTEGER');
+
   seedDefaultSettings();
+  seedDefaultUsers();
   seedMenuFromCards();
+}
+
+function seedDefaultUsers() {
+  try {
+    const existing = db.prepare('SELECT count(*) as count FROM users').get();
+    if (!existing || existing.count === 0) {
+      const { iso } = getISTTimestamp();
+      // Simple sha256 hash for default user
+      const salt = 'waffelden_default_salt';
+      const hash = createPasswordHash('admin123', salt);
+      db.prepare(`
+        INSERT INTO users (username, email, password_hash, salt, name, role, shop_name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('admin', 'admin@waffelden.com', hash, salt, 'Store Manager', 'owner', 'Waffel Den', iso);
+    }
+  } catch (err) {
+    console.warn('Seed users notice:', err.message);
+  }
+}
+
+export function createPasswordHash(password, salt) {
+  return crypto.createHash('sha256').update(password + salt).digest('hex');
+}
+
+export function generateSalt() {
+  return crypto.randomBytes(16).toString('hex');
 }
 
 function seedDefaultSettings() {
@@ -480,28 +547,50 @@ export function seedMenuFromCards(force = false) {
 }
 
 // Function to generate the next unique order number
-export function generateNextOrderNumber() {
+export function generateNextOrderNumber(userId = null) {
   const { date } = getISTTimestamp();
   const dateCompact = date.replace(/-/g, ''); // 20261121
   
-  // Get prefix from settings
-  const prefixRow = db.prepare("SELECT value FROM settings WHERE key = 'order_prefix'").get();
-  const prefix = prefixRow ? prefixRow.value : 'WD-';
+  // Get prefix from user_settings or general settings
+  let prefix = 'WD-';
+  try {
+    if (userId) {
+      const uPrefix = db.prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'order_prefix'").get(userId);
+      if (uPrefix?.value) prefix = uPrefix.value;
+    }
+    if (prefix === 'WD-') {
+      const prefixRow = db.prepare("SELECT value FROM settings WHERE key = 'order_prefix'").get();
+      if (prefixRow?.value) prefix = prefixRow.value;
+    }
+  } catch (e) {
+    // fallback
+  }
 
   // Count orders created today
-  const countRow = db.prepare("SELECT COUNT(*) as count FROM orders WHERE order_date = ?").get(date);
-  const nextSeq = (countRow ? countRow.count : 0) + 1;
+  let nextSeq = 1;
+  try {
+    const countRow = userId
+      ? db.prepare("SELECT COUNT(*) as count FROM orders WHERE order_date = ? AND (user_id = ? OR user_id IS NULL)").get(date, userId)
+      : db.prepare("SELECT COUNT(*) as count FROM orders WHERE order_date = ?").get(date);
+    nextSeq = (countRow ? countRow.count : 0) + 1;
+  } catch (e) {
+    // fallback
+  }
   const seqPadded = String(nextSeq).padStart(3, '0');
 
   let orderNum = `${prefix}${dateCompact}-${seqPadded}`;
 
   // Ensure uniqueness
-  let collision = db.prepare('SELECT id FROM orders WHERE order_number = ?').get(orderNum);
-  let attempt = 1;
-  while (collision) {
-    orderNum = `${prefix}${dateCompact}-${String(nextSeq + attempt).padStart(3, '0')}`;
-    collision = db.prepare('SELECT id FROM orders WHERE order_number = ?').get(orderNum);
-    attempt++;
+  try {
+    let collision = db.prepare('SELECT id FROM orders WHERE order_number = ?').get(orderNum);
+    let attempt = 1;
+    while (collision) {
+      orderNum = `${prefix}${dateCompact}-${String(nextSeq + attempt).padStart(3, '0')}`;
+      collision = db.prepare('SELECT id FROM orders WHERE order_number = ?').get(orderNum);
+      attempt++;
+    }
+  } catch (e) {
+    // fallback
   }
 
   return orderNum;

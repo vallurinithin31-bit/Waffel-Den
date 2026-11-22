@@ -11,7 +11,9 @@ import {
   FileSpreadsheet,
   Settings,
   Coffee,
-  X
+  X,
+  Users,
+  LogOut
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -21,7 +23,10 @@ export default function Sidebar({
   lowStockCount = 0,
   mobileOpen,
   setMobileOpen,
-  shopName = 'Waffel Den'
+  shopName = 'Waffel Den',
+  currentUser,
+  onOpenAuth,
+  onLogout
 }) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -112,6 +117,38 @@ export default function Sidebar({
             );
           })}
         </nav>
+
+        {/* User Account Card */}
+        {currentUser ? (
+          <div className="p-3 mx-3 mb-2 rounded-xl bg-stone-800/80 border border-stone-700/60 flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                {currentUser.name?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-stone-200 truncate">{currentUser.name}</div>
+                <div className="text-[10px] text-stone-400 capitalize truncate">{currentUser.role || 'Staff'}</div>
+              </div>
+            </div>
+            <button
+              onClick={onOpenAuth}
+              className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-700 transition cursor-pointer"
+              title="Switch / Manage Accounts"
+            >
+              <Users className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="p-3 mx-3 mb-2">
+            <button
+              onClick={onOpenAuth}
+              className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Sign In / Create Account</span>
+            </button>
+          </div>
+        )}
 
         {/* Shop Footer Status */}
         <div className="p-4 border-t border-stone-800/80 bg-stone-950/30 text-xs text-stone-400">

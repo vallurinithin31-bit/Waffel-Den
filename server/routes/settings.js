@@ -12,11 +12,23 @@ const router = express.Router();
 // Get all settings
 router.get('/', (req, res) => {
   try {
-    const rows = db.prepare('SELECT key, value FROM settings').all();
+    const globalRows = db.prepare('SELECT key, value FROM settings').all();
     const settings = {};
-    for (const r of rows) {
+    for (const r of globalRows) {
       settings[r.key] = r.value;
     }
+
+    if (req.userId) {
+      try {
+        const userRows = db.prepare('SELECT key, value FROM user_settings WHERE user_id = ?').all(req.userId);
+        for (const ur of userRows) {
+          settings[ur.key] = ur.value;
+        }
+      } catch (uErr) {
+        // user_settings might be empty
+      }
+    }
+
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -27,7 +39,13 @@ router.get('/', (req, res) => {
 router.post('/', (req, res) => {
   try {
     const updates = req.body; // e.g. { shop_name: "Waffel Den", tax_enabled: "1", ... }
-    const stmt = db.prepare(`
+    const uid = req.userId || 1;
+
+    const userStmt = db.prepare(`
+      INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)
+      ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value
+    `);
+    const globalStmt = db.prepare(`
       INSERT INTO settings (key, value) VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `);
@@ -35,15 +53,23 @@ router.post('/', (req, res) => {
     db.exec('BEGIN TRANSACTION');
     try {
       for (const [key, value] of Object.entries(updates)) {
-        stmt.run(key, String(value));
+        userStmt.run(uid, key, String(value));
+        if (uid === 1) {
+          globalStmt.run(key, String(value));
+        }
       }
       db.exec('COMMIT');
 
-      const rows = db.prepare('SELECT key, value FROM settings').all();
+      const globalRows = db.prepare('SELECT key, value FROM settings').all();
       const settings = {};
-      for (const r of rows) {
+      for (const r of globalRows) {
         settings[r.key] = r.value;
       }
+      const userRows = db.prepare('SELECT key, value FROM user_settings WHERE user_id = ?').all(uid);
+      for (const ur of userRows) {
+        settings[ur.key] = ur.value;
+      }
+
       res.json({ success: true, settings });
     } catch (txErr) {
       db.exec('ROLLBACK');

@@ -3,9 +3,10 @@ import { db, getISTTimestamp } from '../db.js';
 
 const router = express.Router();
 
-// Get full snapshot of database for client persistent backup
+// Get full snapshot of database for client persistent backup (scoped to authenticated user)
 router.get('/', (req, res) => {
   try {
+    const uid = req.userId || 1;
     let orders = [];
     let orderItems = [];
     let products = [];
@@ -14,20 +15,28 @@ router.get('/', (req, res) => {
     let settings = {};
 
     try {
-      orders = db.prepare('SELECT * FROM orders ORDER BY id DESC').all();
+      orders = db.prepare('SELECT * FROM orders WHERE (user_id = ? OR (user_id IS NULL AND ? = 1)) ORDER BY id DESC').all(uid, uid);
       orderItems = db.prepare('SELECT * FROM order_items').all();
-      products = db.prepare('SELECT * FROM products').all();
-      expenses = db.prepare('SELECT * FROM expenses ORDER BY id DESC').all();
-      closings = db.prepare('SELECT * FROM daily_closings ORDER BY id DESC').all();
+      products = db.prepare('SELECT * FROM products WHERE (user_id = ? OR user_id IS NULL)').all(uid);
+      expenses = db.prepare('SELECT * FROM expenses WHERE (user_id = ? OR (user_id IS NULL AND ? = 1)) ORDER BY id DESC').all(uid, uid);
+      closings = db.prepare('SELECT * FROM daily_closings WHERE (user_id = ? OR (user_id IS NULL AND ? = 1)) ORDER BY id DESC').all(uid, uid);
+
       const rawSettings = db.prepare('SELECT key, value FROM settings').all();
       settings = rawSettings.reduce((acc, row) => {
         acc[row.key] = row.value;
         return acc;
       }, {});
+
+      // Overlay user_settings
+      const userSettings = db.prepare('SELECT key, value FROM user_settings WHERE user_id = ?').all(uid);
+      for (const ur of userSettings) {
+        settings[ur.key] = ur.value;
+      }
     } catch (e) {
       console.warn('Sync GET notice:', e.message);
     }
 
+    const orderIdSet = new Set(orders.map(o => o.id));
     const ordersWithItems = orders.map(ord => ({
       ...ord,
       items: orderItems.filter(item => item.order_id === ord.id)
@@ -46,28 +55,31 @@ router.get('/', (req, res) => {
   }
 });
 
-// Rehydrate / sync client persistent backup into server database
+// Rehydrate / sync client persistent backup into server database (scoped to authenticated user)
 router.post('/', (req, res) => {
   try {
     const { orders = [], products = [], expenses = [], closings = [], settings = {} } = req.body;
     const { iso, date: todayDate, time: todayTime } = getISTTimestamp();
+    const uid = req.userId || 1;
 
     try {
       db.exec('BEGIN TRANSACTION');
     } catch (e) {
-      // ignore pragma/transaction warning on memory wrapper
+      // ignore
     }
 
     try {
       // 1. Sync Custom Products
       try {
-        const existingProds = new Set(db.prepare('SELECT name FROM products').all().map(p => p.name.trim().toLowerCase()));
+        const existingProds = new Set(
+          db.prepare('SELECT name FROM products WHERE (user_id = ? OR user_id IS NULL)').all(uid).map(p => p.name.trim().toLowerCase())
+        );
         const insProd = db.prepare(`
           INSERT INTO products (
             name, category_id, category_name, description, selling_price,
             ingredient_cost, prep_cost, packaging_cost, total_unit_cost,
-            expected_profit, profit_margin_pct, is_active, created_at, updated_at
-          ) VALUES (?, (SELECT id FROM categories WHERE name = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            expected_profit, profit_margin_pct, is_active, created_at, updated_at, user_id
+          ) VALUES (?, (SELECT id FROM categories WHERE name = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const p of products) {
@@ -91,7 +103,8 @@ router.post('/', (req, res) => {
               margin,
               p.is_active ?? 1,
               p.created_at || iso,
-              p.updated_at || iso
+              p.updated_at || iso,
+              uid
             );
             existingProds.add(p.name.trim().toLowerCase());
           }
@@ -102,20 +115,22 @@ router.post('/', (req, res) => {
 
       // 2. Sync Orders
       try {
-        const existingOrderNums = new Set(db.prepare('SELECT order_number FROM orders').all().map(o => o.order_number));
+        const existingOrderNums = new Set(
+          db.prepare('SELECT order_number FROM orders WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))').all(uid, uid).map(o => o.order_number)
+        );
         const insOrder = db.prepare(`
           INSERT INTO orders (
             order_number, order_date, order_time, created_at, order_type,
             customer_name, customer_phone, notes, subtotal, discount_type,
             discount_value, discount_amount, discount_reason, tax_rate, tax_amount,
             final_total, amount_paid, outstanding_balance, payment_method,
-            payment_status, order_status, total_cogs, gross_profit, updated_at
+            payment_status, order_status, total_cogs, gross_profit, updated_at, user_id
           ) VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
-            ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?
           )
         `);
 
@@ -126,7 +141,7 @@ router.post('/', (req, res) => {
             amount_paid = ?,
             outstanding_balance = ?,
             updated_at = ?
-          WHERE order_number = ?
+          WHERE order_number = ? AND (user_id = ? OR (user_id IS NULL AND ? = 1))
         `);
 
         const insItem = db.prepare(`
@@ -165,7 +180,8 @@ router.post('/', (req, res) => {
               ord.order_status || 'Completed',
               Number(ord.total_cogs) || 0,
               Number(ord.gross_profit) || 0,
-              ord.updated_at || iso
+              ord.updated_at || iso,
+              uid
             );
 
             const newOrderId = info.lastInsertRowid;
@@ -206,7 +222,9 @@ router.post('/', (req, res) => {
                 Number(ord.amount_paid) || 0,
                 Number(ord.outstanding_balance) || 0,
                 ord.updated_at || iso,
-                ord.order_number
+                ord.order_number,
+                uid,
+                uid
               );
             } catch (uErr) {
               // ignore
@@ -220,15 +238,15 @@ router.post('/', (req, res) => {
       // 3. Sync Expenses
       try {
         const existingExpenses = new Set(
-          db.prepare('SELECT category, description, date, amount FROM expenses')
-            .all()
+          db.prepare('SELECT category, description, date, amount FROM expenses WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))')
+            .all(uid, uid)
             .map(e => `${e.category}_${e.description || ''}_${e.date}_${e.amount}`)
         );
 
         const insExpense = db.prepare(`
           INSERT INTO expenses (
-            date, amount, category, description, payment_method, paid_from_cash_register, included_in_cogs, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            date, amount, category, description, payment_method, paid_from_cash_register, included_in_cogs, created_at, user_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const exp of expenses) {
@@ -243,7 +261,8 @@ router.post('/', (req, res) => {
               exp.payment_method || 'Cash',
               exp.paid_from_cash_register ? 1 : 0,
               exp.included_in_cogs ? 1 : 0,
-              exp.created_at || iso
+              exp.created_at || iso,
+              uid
             );
             existingExpenses.add(key);
           }
@@ -254,18 +273,20 @@ router.post('/', (req, res) => {
 
       // 4. Sync Closings
       try {
-        const existingClosings = new Set(db.prepare('SELECT closing_date FROM daily_closings').all().map(c => c.closing_date));
+        const existingClosings = new Set(
+          db.prepare('SELECT closing_date FROM daily_closings WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))').all(uid, uid).map(c => c.closing_date)
+        );
         const insClosing = db.prepare(`
           INSERT INTO daily_closings (
             closing_date, opening_cash, cash_sales, upi_sales, card_sales, other_sales,
             cash_expenses, cash_refunds, expected_closing_cash, actual_closing_cash,
             cash_difference, total_orders, completed_orders, cancelled_orders,
-            net_sales, gross_profit, operating_expenses, net_profit, closing_notes, closed_at
+            net_sales, gross_profit, operating_expenses, net_profit, closing_notes, closed_at, user_id
           ) VALUES (
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?
           )
         `);
 
@@ -291,7 +312,8 @@ router.post('/', (req, res) => {
               Number(cls.operating_expenses) || 0,
               Number(cls.net_profit) || 0,
               cls.closing_notes || '',
-              cls.closed_at || iso
+              cls.closed_at || iso,
+              uid
             );
             existingClosings.add(cls.closing_date);
           }
@@ -302,14 +324,14 @@ router.post('/', (req, res) => {
 
       // 5. Sync Settings
       try {
-        const setStmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+        const setStmt = db.prepare('INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)');
         if (Array.isArray(settings)) {
           for (const s of settings) {
-            if (s.key) setStmt.run(s.key, String(s.value ?? ''));
+            if (s.key) setStmt.run(uid, s.key, String(s.value ?? ''));
           }
         } else if (settings && typeof settings === 'object') {
           for (const [k, v] of Object.entries(settings)) {
-            setStmt.run(k, String(v ?? ''));
+            setStmt.run(uid, k, String(v ?? ''));
           }
         }
       } catch (sErr) {
@@ -322,7 +344,7 @@ router.post('/', (req, res) => {
         // ignore
       }
 
-      res.json({ success: true, message: 'Database rehydrated and synchronized successfully' });
+      res.json({ success: true, message: 'Database rehydrated and synchronized for user account' });
     } catch (innerErr) {
       try {
         db.exec('ROLLBACK');

@@ -30,7 +30,6 @@ function getDateRange(rangeType, customStart, customEnd) {
     return { start: customStart, end: customEnd, label: `${customStart} to ${customEnd}` };
   }
 
-  // Default to today
   return { start: today, end: today, label: 'Today' };
 }
 
@@ -40,18 +39,21 @@ router.get('/dashboard', (req, res) => {
     const { range = 'today', start_date, end_date } = req.query;
     const { start, end } = getDateRange(range, start_date, end_date);
     const { date: todayDate } = getISTTimestamp();
+    const uid = req.userId;
 
     // 1. Current Period Orders (Non-cancelled)
     const validOrders = db.prepare(`
       SELECT * FROM orders
       WHERE order_date >= ? AND order_date <= ? AND order_status != 'Cancelled'
-    `).all(start, end);
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
+    `).all(start, end, uid, uid);
 
     // All orders in period (including cancelled)
     const allOrders = db.prepare(`
       SELECT * FROM orders
       WHERE order_date >= ? AND order_date <= ?
-    `).all(start, end);
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
+    `).all(start, end, uid, uid);
 
     let totalSales = 0;
     let totalCogs = 0;
@@ -97,10 +99,11 @@ router.get('/dashboard', (req, res) => {
     const expenses = db.prepare(`
       SELECT * FROM expenses
       WHERE date >= ? AND date <= ?
-    `).all(start, end);
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
+    `).all(start, end, uid, uid);
 
     let totalExpenses = 0;
-    let operatingExpenses = 0; // Excludes purchases marked included_in_cogs
+    let operatingExpenses = 0;
 
     for (const exp of expenses) {
       totalExpenses += exp.amount;
@@ -126,12 +129,12 @@ router.get('/dashboard', (req, res) => {
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE o.order_date >= ? AND o.order_date <= ? AND o.order_status != 'Cancelled'
+        AND (o.user_id = ? OR (o.user_id IS NULL AND ? = 1))
       GROUP BY oi.product_name
       ORDER BY total_qty DESC
-    `).all(start, end);
+    `).all(start, end, uid, uid);
 
     const bestSelling = productStats.length > 0 ? productStats[0] : null;
-
     const mostProfitable = [...productStats].sort((a, b) => b.total_profit - a.total_profit)[0] || null;
 
     // 4. Comparison with Yesterday
@@ -143,14 +146,16 @@ router.get('/dashboard', (req, res) => {
       SELECT SUM(final_total) as sales, COUNT(*) as orders_count
       FROM orders
       WHERE order_date = ? AND order_status != 'Cancelled'
-    `).get(yesterdayStr);
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
+    `).get(yesterdayStr, uid, uid);
 
     const yesterdaySales = yesterdaySalesRow && yesterdaySalesRow.sales ? Number(yesterdaySalesRow.sales.toFixed(2)) : 0;
     const todaySalesRow = db.prepare(`
       SELECT SUM(final_total) as sales, COUNT(*) as orders_count
       FROM orders
       WHERE order_date = ? AND order_status != 'Cancelled'
-    `).get(todayDate);
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
+    `).get(todayDate, uid, uid);
     const todayActualSales = todaySalesRow && todaySalesRow.sales ? Number(todaySalesRow.sales.toFixed(2)) : 0;
 
     let salesChangeVsYesterday = Number((todayActualSales - yesterdaySales).toFixed(2));
@@ -161,7 +166,7 @@ router.get('/dashboard', (req, res) => {
       salesPctChangeVsYesterday = 100;
     }
 
-    // 5. Daily Trend (last 7 or 30 days)
+    // 5. Daily Trend
     const trendDays = range === '30days' ? 30 : 7;
     const trendStartObj = new Date(todayDate);
     trendStartObj.setDate(trendStartObj.getDate() - (trendDays - 1));
@@ -176,8 +181,9 @@ router.get('/dashboard', (req, res) => {
         SUM(gross_profit) as daily_gross_profit
       FROM orders
       WHERE order_date >= ? AND order_date <= ? AND order_status != 'Cancelled'
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
       GROUP BY order_date
-    `).all(trendStartStr, todayDate);
+    `).all(trendStartStr, todayDate, uid, uid);
 
     const dailyExpensesAgg = db.prepare(`
       SELECT
@@ -186,10 +192,10 @@ router.get('/dashboard', (req, res) => {
         SUM(amount) as total_expenses
       FROM expenses
       WHERE date >= ? AND date <= ?
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
       GROUP BY date
-    `).all(trendStartStr, todayDate);
+    `).all(trendStartStr, todayDate, uid, uid);
 
-    // Map into consecutive daily points
     const trendMap = {};
     for (let i = 0; i < trendDays; i++) {
       const cur = new Date(trendStartObj);
@@ -197,7 +203,7 @@ router.get('/dashboard', (req, res) => {
       const cStr = cur.toISOString().slice(0, 10);
       trendMap[cStr] = {
         date: cStr,
-        displayDate: cStr.slice(5), // MM-DD
+        displayDate: cStr.slice(5),
         sales: 0,
         grossProfit: 0,
         expenses: 0,
@@ -264,19 +270,23 @@ router.get('/detailed', (req, res) => {
   try {
     const { range = '30days', start_date, end_date } = req.query;
     const { start, end } = getDateRange(range, start_date, end_date);
+    const uid = req.userId;
 
     // Orders in period (excluding cancelled)
     const orders = db.prepare(`
       SELECT * FROM orders
       WHERE order_date >= ? AND order_date <= ? AND order_status != 'Cancelled'
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
       ORDER BY order_date ASC
-    `).all(start, end);
+    `).all(start, end, uid, uid);
 
     // Cancelled orders count
-    const cancelledCount = db.prepare(`
+    const cancelledCountRow = db.prepare(`
       SELECT COUNT(*) as count FROM orders
       WHERE order_date >= ? AND order_date <= ? AND order_status = 'Cancelled'
-    `).get(start, end).count;
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
+    `).get(start, end, uid, uid);
+    const cancelledCount = cancelledCountRow ? cancelledCountRow.count : 0;
 
     let totalRevenue = 0;
     let totalDiscount = 0;
@@ -309,11 +319,9 @@ router.get('/detailed', (req, res) => {
       totalCogs += ord.total_cogs;
       grossProfit += ord.gross_profit;
 
-      // Payment Breakdown
       const m = ord.payment_method || 'Other';
       paymentMethods[m] = (paymentMethods[m] || 0) + ord.final_total;
 
-      // Hourly peak breakdown
       if (ord.order_time) {
         const hour = parseInt(ord.order_time.slice(0, 2), 10);
         if (!isNaN(hour) && hour >= 0 && hour < 24) {
@@ -322,7 +330,6 @@ router.get('/detailed', (req, res) => {
         }
       }
 
-      // Weekday breakdown
       if (ord.order_date) {
         const dayIdx = new Date(ord.order_date).getDay();
         if (weekdayDistribution[dayIdx]) {
@@ -343,8 +350,10 @@ router.get('/detailed', (req, res) => {
 
     // Operating expenses
     const expenses = db.prepare(`
-      SELECT * FROM expenses WHERE date >= ? AND date <= ?
-    `).all(start, end);
+      SELECT * FROM expenses 
+      WHERE date >= ? AND date <= ?
+        AND (user_id = ? OR (user_id IS NULL AND ? = 1))
+    `).all(start, end, uid, uid);
 
     let totalExpenses = 0;
     let operatingExpenses = 0;
@@ -377,9 +386,10 @@ router.get('/detailed', (req, res) => {
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE o.order_date >= ? AND o.order_date <= ? AND o.order_status != 'Cancelled'
+        AND (o.user_id = ? OR (o.user_id IS NULL AND ? = 1))
       GROUP BY oi.product_name
       ORDER BY revenue DESC
-    `).all(start, end);
+    `).all(start, end, uid, uid);
 
     // Category Breakdown
     const categoryBreakdown = db.prepare(`
@@ -391,17 +401,13 @@ router.get('/detailed', (req, res) => {
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE o.order_date >= ? AND o.order_date <= ? AND o.order_status != 'Cancelled'
+        AND (o.user_id = ? OR (o.user_id IS NULL AND ? = 1))
       GROUP BY oi.category_name
       ORDER BY revenue DESC
-    `).all(start, end);
+    `).all(start, end, uid, uid);
 
-    // Identify low margin products (< 35% margin)
     const lowMarginProducts = productBreakdown.filter(p => p.margin_pct < 35 && p.quantity_sold > 0);
-
-    // Identify Peak business hour
     const peakHour = [...hourlyDistribution].sort((a, b) => b.orders - a.orders)[0] || null;
-
-    // Identify Busiest weekday
     const busiestDay = [...weekdayDistribution].sort((a, b) => b.orders - a.orders)[0] || null;
 
     res.json({
@@ -409,29 +415,26 @@ router.get('/detailed', (req, res) => {
       metrics: {
         totalOrders: orders.length,
         cancelledOrders: cancelledCount,
-        averageOrderValue: orders.length > 0 ? Number((totalRevenue / orders.length).toFixed(2)) : 0,
-        grossSalesRevenue: totalRevenue,
-        discounts: totalDiscount,
-        taxes: totalTax,
+        totalRevenue,
         netSales,
-        costOfGoodsSold: totalCogs,
+        totalDiscount,
+        totalTax,
+        totalCogs,
         grossProfit,
-        grossProfitMarginPct: profitMarginPct,
+        profitMarginPct,
         operatingExpenses,
         totalExpenses,
         netProfit,
-        netProfitMarginPct,
-        profitPerOrder: orders.length > 0 ? Number((netProfit / orders.length).toFixed(2)) : 0
+        netProfitMarginPct
       },
       paymentMethods,
       hourlyDistribution,
       weekdayDistribution,
-      peakHour,
-      busiestDay,
       productBreakdown,
       categoryBreakdown,
-      expenseCategoryMap,
-      lowMarginProducts
+      lowMarginProducts,
+      peakHour,
+      busiestDay
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

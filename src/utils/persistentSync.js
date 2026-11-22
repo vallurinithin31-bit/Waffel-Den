@@ -1,14 +1,80 @@
-// Client-side persistent storage and serverless rehydration sync for Waffel Den
-// Guarantees all entered orders, expenses, custom products, and daily closings persist permanently
-// across browser refreshes, Vercel serverless cold-starts, and device restarts.
+// Client-side persistent storage, user authentication & serverless rehydration sync for Waffel Den
+// Guarantees all entered orders, expenses, custom products, and daily closings are strictly isolated
+// per user account and persist permanently across browser refreshes, Vercel cold-starts, and device restarts.
 
-const STORAGE_KEYS = {
-  ORDERS: 'waffelden_orders_v1',
-  EXPENSES: 'waffelden_expenses_v1',
-  CUSTOM_PRODUCTS: 'waffelden_custom_products_v1',
-  CLOSINGS: 'waffelden_closings_v1',
-  SETTINGS: 'waffelden_settings_v1',
-  LAST_SYNC: 'waffelden_last_sync_v1'
+export const AUTH_USER_KEY = 'waffelden_auth_current_user_v1';
+
+// --- Current User Authentication State ---
+export const getCurrentUser = () => {
+  try {
+    const raw = localStorage.getItem(AUTH_USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const setCurrentUser = (user, token) => {
+  try {
+    const fullUser = { ...user, token: token || user.token };
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(fullUser));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('waffelden_auth_changed', { detail: fullUser }));
+      window.dispatchEvent(new CustomEvent('waffelden_local_data_changed'));
+    }
+  } catch (e) {
+    console.warn('Error setting current user:', e);
+  }
+};
+
+export const logoutUser = () => {
+  try {
+    localStorage.removeItem(AUTH_USER_KEY);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('waffelden_auth_changed', { detail: null }));
+      window.dispatchEvent(new CustomEvent('waffelden_local_data_changed'));
+    }
+  } catch (e) {
+    console.warn('Error logging out:', e);
+  }
+};
+
+// Automatic fetch interceptor for all /api calls
+if (typeof window !== 'undefined' && !window.__waffelden_fetch_intercepted) {
+  window.__waffelden_fetch_intercepted = true;
+  const originalFetch = window.fetch;
+  window.fetch = function(url, options = {}) {
+    if (typeof url === 'string' && url.startsWith('/api/')) {
+      const user = getCurrentUser();
+      if (user?.id) {
+        options = options || {};
+        const headers = options.headers || {};
+        if (headers instanceof Headers) {
+          headers.set('x-user-id', String(user.id));
+          if (user.token) headers.set('Authorization', `Bearer ${user.token}`);
+          options.headers = headers;
+        } else if (Array.isArray(headers)) {
+          headers.push(['x-user-id', String(user.id)]);
+          if (user.token) headers.push(['Authorization', `Bearer ${user.token}`]);
+          options.headers = headers;
+        } else {
+          options.headers = {
+            ...headers,
+            'x-user-id': String(user.id),
+            ...(user.token ? { 'Authorization': `Bearer ${user.token}` } : {})
+          };
+        }
+      }
+    }
+    return originalFetch.call(this, url, options);
+  };
+}
+
+// User-scoped Local Storage Key Generator
+const getUserKey = (base) => {
+  const user = getCurrentUser();
+  const uid = user ? user.id : 'default';
+  return `waffelden_${base}_u${uid}_v1`;
 };
 
 const safeGetJSON = (key, fallback = []) => {
@@ -29,23 +95,40 @@ const safeSetJSON = (key, val) => {
   }
 };
 
-// --- Orders Persistence ---
-export const getLocalOrders = () => safeGetJSON(STORAGE_KEYS.ORDERS, []);
+// --- Orders Persistence (User-Scoped) ---
+export const getLocalOrders = () => {
+  const key = getUserKey('orders');
+  let orders = safeGetJSON(key, null);
+  // Migrate from un-scoped legacy key if needed
+  if (orders === null) {
+    const legacy = safeGetJSON('waffelden_orders_v1', null);
+    if (legacy !== null) {
+      safeSetJSON(key, legacy);
+      orders = legacy;
+    } else {
+      orders = [];
+    }
+  }
+  return orders;
+};
 
 export const saveLocalOrder = (order) => {
   if (!order || (!order.order_number && !order.id)) return;
+  const user = getCurrentUser();
+  const orderWithUser = { ...order, user_id: user?.id || order.user_id || 1 };
+
   const orders = getLocalOrders();
   const existingIdx = orders.findIndex(o => 
-    (order.order_number && o.order_number === order.order_number) || 
-    (order.id && o.id === order.id)
+    (orderWithUser.order_number && o.order_number === orderWithUser.order_number) || 
+    (orderWithUser.id && o.id === orderWithUser.id)
   );
 
   if (existingIdx >= 0) {
-    orders[existingIdx] = { ...orders[existingIdx], ...order };
+    orders[existingIdx] = { ...orders[existingIdx], ...orderWithUser };
   } else {
-    orders.unshift(order); // Put newest first
+    orders.unshift(orderWithUser); // Put newest first
   }
-  safeSetJSON(STORAGE_KEYS.ORDERS, orders);
+  safeSetJSON(getUserKey('orders'), orders);
   triggerSyncNotification();
 };
 
@@ -60,29 +143,45 @@ export const updateLocalOrderStatus = (orderNumber, updates) => {
     return o;
   });
   if (modified) {
-    safeSetJSON(STORAGE_KEYS.ORDERS, updatedOrders);
+    safeSetJSON(getUserKey('orders'), updatedOrders);
     triggerSyncNotification();
   }
 };
 
-// --- Expenses Persistence ---
-export const getLocalExpenses = () => safeGetJSON(STORAGE_KEYS.EXPENSES, []);
+// --- Expenses Persistence (User-Scoped) ---
+export const getLocalExpenses = () => {
+  const key = getUserKey('expenses');
+  let exps = safeGetJSON(key, null);
+  if (exps === null) {
+    const legacy = safeGetJSON('waffelden_expenses_v1', null);
+    if (legacy !== null) {
+      safeSetJSON(key, legacy);
+      exps = legacy;
+    } else {
+      exps = [];
+    }
+  }
+  return exps;
+};
 
 export const saveLocalExpense = (expense) => {
   if (!expense) return;
+  const user = getCurrentUser();
+  const expWithUser = { ...expense, user_id: user?.id || expense.user_id || 1 };
+
   const expenses = getLocalExpenses();
-  const key = `${expense.category}_${expense.description || expense.title || ''}_${expense.date}_${expense.amount}`;
+  const key = `${expWithUser.category}_${expWithUser.description || expWithUser.title || ''}_${expWithUser.date}_${expWithUser.amount}`;
   const existingIdx = expenses.findIndex(e => {
     const eKey = `${e.category}_${e.description || e.title || ''}_${e.date}_${e.amount}`;
-    return (expense.id && e.id === expense.id) || eKey === key;
+    return (expWithUser.id && e.id === expWithUser.id) || eKey === key;
   });
 
   if (existingIdx >= 0) {
-    expenses[existingIdx] = { ...expenses[existingIdx], ...expense };
+    expenses[existingIdx] = { ...expenses[existingIdx], ...expWithUser };
   } else {
-    expenses.unshift(expense);
+    expenses.unshift(expWithUser);
   }
-  safeSetJSON(STORAGE_KEYS.EXPENSES, expenses);
+  safeSetJSON(getUserKey('expenses'), expenses);
   triggerSyncNotification();
 };
 
@@ -92,63 +191,69 @@ export const deleteLocalExpense = (idOrKey) => {
     const key = `${e.category}_${e.description || e.title || ''}_${e.date}_${e.amount}`;
     return e.id !== idOrKey && key !== idOrKey;
   });
-  safeSetJSON(STORAGE_KEYS.EXPENSES, filtered);
+  safeSetJSON(getUserKey('expenses'), filtered);
   triggerSyncNotification();
 };
 
-// --- Custom Products Persistence ---
-export const getLocalCustomProducts = () => safeGetJSON(STORAGE_KEYS.CUSTOM_PRODUCTS, []);
+// --- Custom Products Persistence (User-Scoped) ---
+export const getLocalCustomProducts = () => safeGetJSON(getUserKey('custom_products'), []);
 
 export const saveLocalCustomProduct = (product) => {
   if (!product || !product.name) return;
+  const user = getCurrentUser();
+  const prodWithUser = { ...product, user_id: user?.id || product.user_id || 1 };
+
   const products = getLocalCustomProducts();
-  const existingIdx = products.findIndex(p => p.name.trim().toLowerCase() === product.name.trim().toLowerCase());
+  const existingIdx = products.findIndex(p => p.name.trim().toLowerCase() === prodWithUser.name.trim().toLowerCase());
 
   if (existingIdx >= 0) {
-    products[existingIdx] = { ...products[existingIdx], ...product };
+    products[existingIdx] = { ...products[existingIdx], ...prodWithUser };
   } else {
-    products.push(product);
+    products.push(prodWithUser);
   }
-  safeSetJSON(STORAGE_KEYS.CUSTOM_PRODUCTS, products);
+  safeSetJSON(getUserKey('custom_products'), products);
   triggerSyncNotification();
 };
 
-// --- Daily Closings Persistence ---
-export const getLocalClosings = () => safeGetJSON(STORAGE_KEYS.CLOSINGS, []);
+// --- Daily Closings Persistence (User-Scoped) ---
+export const getLocalClosings = () => safeGetJSON(getUserKey('closings'), []);
 
 export const saveLocalClosing = (closing) => {
   if (!closing || !closing.closing_date) return;
+  const user = getCurrentUser();
+  const clsWithUser = { ...closing, user_id: user?.id || closing.user_id || 1 };
+
   const closings = getLocalClosings();
-  const existingIdx = closings.findIndex(c => c.closing_date === closing.closing_date);
+  const existingIdx = closings.findIndex(c => c.closing_date === clsWithUser.closing_date);
 
   if (existingIdx >= 0) {
-    closings[existingIdx] = { ...closings[existingIdx], ...closing };
+    closings[existingIdx] = { ...closings[existingIdx], ...clsWithUser };
   } else {
-    closings.unshift(closing);
+    closings.unshift(clsWithUser);
   }
-  safeSetJSON(STORAGE_KEYS.CLOSINGS, closings);
+  safeSetJSON(getUserKey('closings'), closings);
   triggerSyncNotification();
 };
 
-// --- Settings Persistence ---
-export const getLocalSettings = () => safeGetJSON(STORAGE_KEYS.SETTINGS, {});
+// --- Settings Persistence (User-Scoped) ---
+export const getLocalSettings = () => safeGetJSON(getUserKey('settings'), {});
 
 export const saveLocalSettings = (settings) => {
   if (!settings) return;
   const current = getLocalSettings();
   const merged = { ...current, ...settings };
-  safeSetJSON(STORAGE_KEYS.SETTINGS, merged);
+  safeSetJSON(getUserKey('settings'), merged);
   triggerSyncNotification();
 };
 
 // Helper event dispatcher to inform UI of sync/storage changes
-const triggerSyncNotification = () => {
+export const triggerSyncNotification = () => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('waffelden_local_data_changed'));
   }
 };
 
-// --- Master Sync: Push local snapshot to server + pull server snapshot ---
+// --- Master Sync: Push current user's local snapshot + pull current user's server snapshot ---
 let isSyncing = false;
 
 export const syncWithServer = async () => {
@@ -156,18 +261,25 @@ export const syncWithServer = async () => {
   isSyncing = true;
 
   try {
+    const user = getCurrentUser();
+    const headers = { 'Content-Type': 'application/json' };
+    if (user?.id) {
+      headers['x-user-id'] = String(user.id);
+      if (user.token) headers['Authorization'] = `Bearer ${user.token}`;
+    }
+
     const localOrders = getLocalOrders();
     const localExpenses = getLocalExpenses();
     const localProducts = getLocalCustomProducts();
     const localClosings = getLocalClosings();
     const localSettings = getLocalSettings();
 
-    // Step 1: If there is any local data, rehydrate the serverless backend
+    // Step 1: Push user's local data to server
     if (localOrders.length > 0 || localExpenses.length > 0 || localProducts.length > 0 || localClosings.length > 0) {
       try {
         await fetch('/api/sync', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             orders: localOrders,
             expenses: localExpenses,
@@ -181,27 +293,25 @@ export const syncWithServer = async () => {
       }
     }
 
-    // Step 2: Fetch current server snapshot to merge any new/updated records
+    // Step 2: Fetch current user's server snapshot
     try {
-      const getRes = await fetch('/api/sync');
+      const getRes = await fetch('/api/sync', { headers });
       if (getRes.ok) {
         const serverSnapshot = await getRes.json();
 
         // Merge orders
         if (Array.isArray(serverSnapshot.orders)) {
           const mergedOrdersMap = new Map();
-          // Server orders first
           for (const ord of serverSnapshot.orders) {
             if (ord.order_number) mergedOrdersMap.set(ord.order_number, ord);
           }
-          // Preserve local orders
           for (const ord of localOrders) {
             if (ord.order_number && !mergedOrdersMap.has(ord.order_number)) {
               mergedOrdersMap.set(ord.order_number, ord);
             }
           }
           const finalOrders = Array.from(mergedOrdersMap.values()).sort((a, b) => (b.id || 0) - (a.id || 0));
-          safeSetJSON(STORAGE_KEYS.ORDERS, finalOrders);
+          safeSetJSON(getUserKey('orders'), finalOrders);
         }
 
         // Merge expenses
@@ -217,12 +327,12 @@ export const syncWithServer = async () => {
               mergedExpensesMap.set(key, exp);
             }
           }
-          safeSetJSON(STORAGE_KEYS.EXPENSES, Array.from(mergedExpensesMap.values()));
+          safeSetJSON(getUserKey('expenses'), Array.from(mergedExpensesMap.values()));
         }
 
         // Merge custom products
         if (Array.isArray(serverSnapshot.products)) {
-          const customServerProds = serverSnapshot.products.filter(p => p.is_active === 1);
+          const customServerProds = serverSnapshot.products.filter(p => p.is_active === 1 && p.user_id === user?.id);
           const mergedProdsMap = new Map();
           for (const p of customServerProds) {
             if (p.name) mergedProdsMap.set(p.name.trim().toLowerCase(), p);
@@ -232,7 +342,7 @@ export const syncWithServer = async () => {
               mergedProdsMap.set(p.name.trim().toLowerCase(), p);
             }
           }
-          safeSetJSON(STORAGE_KEYS.CUSTOM_PRODUCTS, Array.from(mergedProdsMap.values()));
+          safeSetJSON(getUserKey('custom_products'), Array.from(mergedProdsMap.values()));
         }
 
         // Merge closings
@@ -246,16 +356,16 @@ export const syncWithServer = async () => {
               closingsMap.set(c.closing_date, c);
             }
           }
-          safeSetJSON(STORAGE_KEYS.CLOSINGS, Array.from(closingsMap.values()));
+          safeSetJSON(getUserKey('closings'), Array.from(closingsMap.values()));
         }
 
         // Merge settings
         if (serverSnapshot.settings && typeof serverSnapshot.settings === 'object') {
           const mergedSettings = { ...localSettings, ...serverSnapshot.settings };
-          safeSetJSON(STORAGE_KEYS.SETTINGS, mergedSettings);
+          safeSetJSON(getUserKey('settings'), mergedSettings);
         }
 
-        safeSetJSON(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
+        safeSetJSON(`waffelden_last_sync_u${user?.id || 1}`, new Date().toISOString());
         triggerSyncNotification();
       }
     } catch (getErr) {
@@ -273,7 +383,6 @@ export const getLocalDashboardMetrics = (range = 'today') => {
   const orders = getLocalOrders();
   const expenses = getLocalExpenses();
 
-  // Determine date filter
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
   

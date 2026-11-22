@@ -11,8 +11,8 @@ let memoryCategories = [...DEFAULT_CATEGORIES];
 router.get('/', (req, res) => {
   try {
     const { category, active, search } = req.query;
-    let query = 'SELECT * FROM products WHERE 1=1';
-    const params = [];
+    let query = 'SELECT * FROM products WHERE (user_id = ? OR user_id IS NULL)';
+    const params = [req.userId];
 
     if (active !== undefined && active !== '') {
       query += ' AND is_active = ?';
@@ -132,11 +132,11 @@ router.post('/', (req, res) => {
       INSERT INTO products (
         name, category_id, category_name, description, selling_price,
         ingredient_cost, prep_cost, packaging_cost, total_unit_cost,
-        expected_profit, profit_margin_pct, is_active, image_url, created_at, updated_at
+        expected_profit, profit_margin_pct, is_active, image_url, created_at, updated_at, user_id
       ) VALUES (
         ?, (SELECT id FROM categories WHERE name = ?), ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, 1, ?, ?, ?
+        ?, ?, 1, ?, ?, ?, ?
       )
     `).run(
       name.trim(),
@@ -152,7 +152,8 @@ router.post('/', (req, res) => {
       margin,
       image_url || '',
       iso,
-      iso
+      iso,
+      req.userId
     );
 
     const created = db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);

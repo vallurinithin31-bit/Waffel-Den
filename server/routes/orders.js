@@ -6,7 +6,7 @@ const router = express.Router();
 // Get next available order number
 router.get('/next-number', (req, res) => {
   try {
-    const nextNum = generateNextOrderNumber();
+    const nextNum = generateNextOrderNumber(req.userId);
     if (nextNum) return res.json({ order_number: nextNum });
   } catch (err) {
     console.warn('generateNextOrderNumber notice:', err.message);
@@ -30,8 +30,8 @@ router.get('/', (req, res) => {
       offset = 0
     } = req.query;
 
-    let query = 'SELECT * FROM orders WHERE 1=1';
-    const params = [];
+    let query = 'SELECT * FROM orders WHERE (user_id = ? OR (user_id IS NULL AND ? = 1))';
+    const params = [req.userId, req.userId];
 
     if (start_date) {
       query += ' AND order_date >= ?';
@@ -123,7 +123,7 @@ router.post('/', (req, res) => {
     }
 
     const { iso, date, time } = getISTTimestamp();
-    const orderNumber = generateNextOrderNumber();
+    const orderNumber = generateNextOrderNumber(req.userId);
 
     // Check tax setting if tax_rate is not explicitly passed
     let taxRate = Number(reqTaxRate);
@@ -233,13 +233,13 @@ router.post('/', (req, res) => {
           customer_name, customer_phone, notes, subtotal, discount_type,
           discount_value, discount_amount, discount_reason, tax_rate, tax_amount,
           final_total, amount_paid, outstanding_balance, payment_method,
-          payment_status, order_status, total_cogs, gross_profit, updated_at
+          payment_status, order_status, total_cogs, gross_profit, updated_at, user_id
         ) VALUES (
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?,
-          ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?
         )
       `);
 
@@ -267,7 +267,8 @@ router.post('/', (req, res) => {
         order_status,
         totalCogs,
         grossProfit,
-        iso
+        iso,
+        req.userId
       );
 
       const orderId = orderInfo.lastInsertRowid;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar.jsx';
 import Header from './components/Header.jsx';
+import AuthModal from './components/AuthModal.jsx';
 import DashboardView from './views/DashboardView.jsx';
 import NewOrderView from './views/NewOrderView.jsx';
 import OrdersView from './views/OrdersView.jsx';
@@ -15,11 +16,17 @@ import {
   syncWithServer, 
   getLocalDashboardMetrics, 
   getLocalSettings, 
-  saveLocalSettings 
+  saveLocalSettings,
+  getCurrentUser,
+  setCurrentUser,
+  logoutUser
 } from './utils/persistentSync.js';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState('new_order'); // Default to Counter Order Entry for fastest shop operations
+  const [currentUser, setCurrentUserState] = useState(() => getCurrentUser());
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  const [currentView, setCurrentView] = useState('new_order'); // Default to Counter Order Entry
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settings, setSettings] = useState(() => getLocalSettings());
   const [todaySales, setTodaySales] = useState(() => getLocalDashboardMetrics('today').totalSales);
@@ -72,8 +79,18 @@ export default function App() {
       setPendingOrdersCount(localMetrics.pendingOrders);
     };
 
+    const handleAuthChange = (e) => {
+      setCurrentUserState(e.detail);
+      setRefreshTrigger(prev => prev + 1);
+    };
+
     window.addEventListener('waffelden_local_data_changed', handleLocalChange);
-    return () => window.removeEventListener('waffelden_local_data_changed', handleLocalChange);
+    window.addEventListener('waffelden_auth_changed', handleAuthChange);
+
+    return () => {
+      window.removeEventListener('waffelden_local_data_changed', handleLocalChange);
+      window.removeEventListener('waffelden_auth_changed', handleAuthChange);
+    };
   }, [fetchGlobalMetadata, refreshTrigger]);
 
   // Keyboard shortcuts (F2 for New Order, F1 for Dashboard)
@@ -155,7 +172,14 @@ export default function App() {
         lowStockCount={lowStockCount}
         mobileOpen={mobileOpen}
         setMobileOpen={setMobileOpen}
-        shopName={settings.shop_name || 'Waffel Den'}
+        shopName={currentUser?.shop_name || settings.shop_name || 'Waffel Den'}
+        currentUser={currentUser}
+        onOpenAuth={() => setAuthModalOpen(true)}
+        onLogout={() => {
+          logoutUser();
+          setCurrentUserState(null);
+          setAuthModalOpen(true);
+        }}
       />
 
       {/* Main Body */}
@@ -169,13 +193,20 @@ export default function App() {
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
           todaySales={todaySales}
+          currentUser={currentUser}
+          onOpenAuth={() => setAuthModalOpen(true)}
+          onLogout={() => {
+            logoutUser();
+            setCurrentUserState(null);
+            setAuthModalOpen(true);
+          }}
         />
 
         {/* View Viewport */}
         <main className="flex-1 overflow-y-auto bg-stone-100/70">
           {currentView === 'dashboard' && (
             <DashboardView
-              key={refreshTrigger}
+              key={`${currentUser?.id || 'guest'}_${refreshTrigger}`}
               onNavigateToNewOrder={() => setCurrentView('new_order')}
               onNavigateToOrders={() => setCurrentView('orders')}
             />
@@ -183,7 +214,7 @@ export default function App() {
 
           {currentView === 'new_order' && (
             <NewOrderView
-              key={refreshTrigger}
+              key={`${currentUser?.id || 'guest'}_${refreshTrigger}`}
               settings={settings}
               onOrderCreated={handleOrderCreated}
             />
@@ -191,41 +222,41 @@ export default function App() {
 
           {currentView === 'orders' && (
             <OrdersView
-              key={refreshTrigger}
+              key={`${currentUser?.id || 'guest'}_${refreshTrigger}`}
               settings={settings}
             />
           )}
 
           {currentView === 'menu' && (
-            <ProductsView key={refreshTrigger} />
+            <ProductsView key={`${currentUser?.id || 'guest'}_${refreshTrigger}`} />
           )}
 
           {currentView === 'analytics' && (
-            <AnalyticsView key={refreshTrigger} />
+            <AnalyticsView key={`${currentUser?.id || 'guest'}_${refreshTrigger}`} />
           )}
 
           {currentView === 'expenses' && (
-            <ExpensesView key={refreshTrigger} />
+            <ExpensesView key={`${currentUser?.id || 'guest'}_${refreshTrigger}`} />
           )}
 
           {currentView === 'inventory' && (
-            <InventoryView key={refreshTrigger} />
+            <InventoryView key={`${currentUser?.id || 'guest'}_${refreshTrigger}`} />
           )}
 
           {currentView === 'closing' && (
-            <DailyClosingView key={refreshTrigger} />
+            <DailyClosingView key={`${currentUser?.id || 'guest'}_${refreshTrigger}`} />
           )}
 
           {currentView === 'reports' && (
             <ReportsView
-              key={refreshTrigger}
+              key={`${currentUser?.id || 'guest'}_${refreshTrigger}`}
               settings={settings}
             />
           )}
 
           {currentView === 'settings' && (
             <SettingsView
-              key={refreshTrigger}
+              key={`${currentUser?.id || 'guest'}_${refreshTrigger}`}
               settings={settings}
               onSettingsUpdated={(newSettings) => {
                 setSettings(newSettings);
@@ -235,6 +266,19 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Interactive Account Login / Register / Switcher Modal */}
+      <AuthModal
+        isOpen={authModalOpen || !currentUser}
+        onClose={() => {
+          if (currentUser) setAuthModalOpen(false);
+        }}
+        onAuthSuccess={(user) => {
+          setCurrentUserState(user);
+          setAuthModalOpen(false);
+          handleRefresh();
+        }}
+      />
     </div>
   );
 }
