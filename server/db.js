@@ -1,4 +1,3 @@
-import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -32,18 +31,111 @@ if (isVercel) {
   dbPath = path.join(dataDir, 'waffelden.db');
 }
 
-export const db = new DatabaseSync(dbPath);
-export { dbPath };
+class SqlJsWrapper {
+  constructor(sqlDb, filePath = null) {
+    this.sqlDb = sqlDb;
+    this.filePath = filePath;
+  }
 
-// Enable WAL mode locally, or memory journal on serverless
-try {
-  db.exec(`
-    PRAGMA journal_mode = ${isVercel ? 'MEMORY' : 'WAL'};
-    PRAGMA foreign_keys = ON;
-  `);
-} catch (e) {
-  console.warn('Pragma set warning:', e);
+  save() {
+    if (this.filePath) {
+      try {
+        const data = this.sqlDb.export();
+        fs.writeFileSync(this.filePath, Buffer.from(data));
+      } catch (e) {
+        // Ignore write errors on read-only environments
+      }
+    }
+  }
+
+  exec(sql) {
+    this.sqlDb.run(sql);
+    this.save();
+  }
+
+  prepare(sql) {
+    const self = this;
+    return {
+      all(...params) {
+        const stmt = self.sqlDb.prepare(sql);
+        try {
+          if (params.length > 0) {
+            stmt.bind(params);
+          }
+          const results = [];
+          while (stmt.step()) {
+            results.push(stmt.getAsObject());
+          }
+          return results;
+        } finally {
+          stmt.free();
+        }
+      },
+      get(...params) {
+        const stmt = self.sqlDb.prepare(sql);
+        try {
+          if (params.length > 0) {
+            stmt.bind(params);
+          }
+          if (stmt.step()) {
+            return stmt.getAsObject();
+          }
+          return undefined;
+        } finally {
+          stmt.free();
+        }
+      },
+      run(...params) {
+        const stmt = self.sqlDb.prepare(sql);
+        try {
+          if (params.length > 0) {
+            stmt.bind(params);
+          }
+          stmt.step();
+          self.save();
+          const rowIdRes = self.sqlDb.exec('SELECT last_insert_rowid() as id');
+          const lastId = rowIdRes?.[0]?.values?.[0]?.[0] || 0;
+          const changesRes = self.sqlDb.exec('SELECT changes() as ch');
+          const changes = changesRes?.[0]?.values?.[0]?.[0] || 0;
+          return { lastInsertRowid: lastId, changes };
+        } finally {
+          stmt.free();
+        }
+      }
+    };
+  }
 }
+
+let rawDb;
+try {
+  const { DatabaseSync } = await import('node:sqlite');
+  rawDb = new DatabaseSync(dbPath);
+  try {
+    rawDb.exec(`
+      PRAGMA journal_mode = ${isVercel ? 'MEMORY' : 'WAL'};
+      PRAGMA foreign_keys = ON;
+    `);
+  } catch (e) {
+    console.warn('Pragma set warning:', e);
+  }
+} catch (err) {
+  console.warn('node:sqlite not natively supported, falling back to WebAssembly sql.js:', err.message);
+  const initSqlJs = (await import('sql.js')).default;
+  const SQL = await initSqlJs();
+  let initialBuffer = null;
+  if (fs.existsSync(dbPath)) {
+    try {
+      initialBuffer = fs.readFileSync(dbPath);
+    } catch (e) {
+      console.warn('Could not read existing database file:', e.message);
+    }
+  }
+  const wasmDb = initialBuffer ? new SQL.Database(initialBuffer) : new SQL.Database();
+  rawDb = new SqlJsWrapper(wasmDb, dbPath);
+}
+
+export const db = rawDb;
+export { dbPath };
 
 // Helper to get current Indian Standard Time (IST) strings
 export function getISTTimestamp() {
