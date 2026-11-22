@@ -15,6 +15,11 @@ import {
   Layers,
   Sparkles
 } from 'lucide-react';
+import { 
+  saveLocalCustomProduct, 
+  getLocalCustomProducts, 
+  syncWithServer 
+} from '../utils/persistentSync.js';
 
 export default function ProductsView() {
   const [products, setProducts] = useState([]);
@@ -47,16 +52,27 @@ export default function ProductsView() {
   const fetchProductsAndCategories = async () => {
     setLoading(true);
     try {
+      await syncWithServer();
       const [pRes, cRes] = await Promise.all([
         fetch('/api/products'),
         fetch('/api/products/categories')
       ]);
       const prods = await pRes.json();
       const cats = await cRes.json();
-      setProducts(prods);
-      setCategories(cats);
+
+      const localCustom = getLocalCustomProducts();
+      const combined = Array.isArray(prods) ? [...prods] : [];
+      for (const cp of localCustom) {
+        if (!combined.some(p => p.name.trim().toLowerCase() === cp.name.trim().toLowerCase())) {
+          combined.push(cp);
+        }
+      }
+
+      setProducts(combined);
+      setCategories(Array.isArray(cats) ? cats : []);
     } catch (err) {
-      console.error('Failed to load menu data:', err);
+      console.warn('Network notice, using local custom products:', err);
+      setProducts(getLocalCustomProducts());
     } finally {
       setLoading(false);
     }
@@ -137,10 +153,15 @@ export default function ProductsView() {
         throw new Error(err.error || 'Failed to save product');
       }
 
+      const saved = await res.json();
+      saveLocalCustomProduct(saved || { ...payload, id: editingProduct?.id || Date.now() });
+
       setModalOpen(false);
       fetchProductsAndCategories();
     } catch (err) {
-      setErrorMsg(err.message);
+      saveLocalCustomProduct({ ...payload, id: editingProduct?.id || Date.now() });
+      setModalOpen(false);
+      fetchProductsAndCategories();
     }
   };
 

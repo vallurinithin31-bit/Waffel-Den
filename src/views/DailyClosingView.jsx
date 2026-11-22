@@ -11,6 +11,11 @@ import {
   History,
   FileText
 } from 'lucide-react';
+import { 
+  saveLocalClosing, 
+  getLocalClosings, 
+  syncWithServer 
+} from '../utils/persistentSync.js';
 
 export default function DailyClosingView() {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -55,11 +60,17 @@ export default function DailyClosingView() {
 
   const fetchHistory = async () => {
     try {
+      await syncWithServer();
       const res = await fetch('/api/closings/history');
       const data = await res.json();
-      setHistoricalClosings(data);
+      if (Array.isArray(data) && data.length > 0) {
+        setHistoricalClosings(data);
+      } else {
+        setHistoricalClosings(getLocalClosings());
+      }
     } catch (err) {
-      console.error(err);
+      console.warn('Network notice, showing local closings:', err);
+      setHistoricalClosings(getLocalClosings());
     }
   };
 
@@ -80,10 +91,24 @@ export default function DailyClosingView() {
       const payload = {
         closing_date: date,
         opening_cash: numOpen,
+        cash_sales: cashSales,
+        upi_sales: closingData?.upiSales || 0,
+        net_sales: closingData?.netSales || 0,
+        gross_profit: closingData?.grossProfit || 0,
+        operating_expenses: cashExpenses,
+        net_profit: closingData?.netProfit || 0,
+        cash_expenses: cashExpenses,
         cash_refunds: numRefunds,
+        expected_closing_cash: expectedClosingCash,
         actual_closing_cash: numActual,
-        closing_notes: closingNotes
+        cash_difference: cashDiff,
+        total_orders: closingData?.totalOrders || 0,
+        completed_orders: closingData?.completedOrders || 0,
+        closing_notes: closingNotes,
+        closed_at: new Date().toISOString()
       };
+
+      saveLocalClosing(payload);
 
       const res = await fetch('/api/closings/finalize', {
         method: 'POST',
@@ -96,7 +121,8 @@ export default function DailyClosingView() {
       setSaveSuccess(true);
       fetchClosingPreview(date);
     } catch (err) {
-      alert(err.message);
+      setSaveSuccess(true);
+      fetchClosingPreview(date);
     } finally {
       setIsFinalizing(false);
     }

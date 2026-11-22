@@ -11,13 +11,19 @@ import InventoryView from './views/InventoryView.jsx';
 import DailyClosingView from './views/DailyClosingView.jsx';
 import ReportsView from './views/ReportsView.jsx';
 import SettingsView from './views/SettingsView.jsx';
+import { 
+  syncWithServer, 
+  getLocalDashboardMetrics, 
+  getLocalSettings, 
+  saveLocalSettings 
+} from './utils/persistentSync.js';
 
 export default function App() {
   const [currentView, setCurrentView] = useState('new_order'); // Default to Counter Order Entry for fastest shop operations
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [settings, setSettings] = useState({});
-  const [todaySales, setTodaySales] = useState(0);
-  const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
+  const [settings, setSettings] = useState(() => getLocalSettings());
+  const [todaySales, setTodaySales] = useState(() => getLocalDashboardMetrics('today').totalSales);
+  const [pendingOrdersCount, setPendingOrdersCount] = useState(() => getLocalDashboardMetrics('today').pendingOrders);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -25,6 +31,9 @@ export default function App() {
   const fetchGlobalMetadata = useCallback(async () => {
     setIsRefreshing(true);
     try {
+      // First ensure server is synchronized with client persistent data
+      await syncWithServer();
+
       const [setRes, dashRes, invRes] = await Promise.all([
         fetch('/api/settings'),
         fetch('/api/analytics/dashboard?range=today'),
@@ -35,12 +44,20 @@ export default function App() {
       const dashData = await dashRes.json();
       const invAlerts = await invRes.json();
 
-      setSettings(setData);
-      setTodaySales(dashData.totalSales || 0);
-      setPendingOrdersCount(dashData.pendingOrders || 0);
-      setLowStockCount(invAlerts.length || 0);
+      if (setData && typeof setData === 'object') {
+        setSettings(prev => ({ ...prev, ...setData }));
+        saveLocalSettings(setData);
+      }
+      
+      const localMetrics = getLocalDashboardMetrics('today');
+      setTodaySales(dashData.totalSales || localMetrics.totalSales || 0);
+      setPendingOrdersCount(dashData.pendingOrders ?? localMetrics.pendingOrders ?? 0);
+      setLowStockCount(Array.isArray(invAlerts) ? invAlerts.length : 0);
     } catch (err) {
-      console.error('Failed to load global metadata:', err);
+      console.warn('Network sync notice, using local cache:', err);
+      const localMetrics = getLocalDashboardMetrics('today');
+      setTodaySales(localMetrics.totalSales);
+      setPendingOrdersCount(localMetrics.pendingOrders);
     } finally {
       setIsRefreshing(false);
     }
@@ -48,6 +65,15 @@ export default function App() {
 
   useEffect(() => {
     fetchGlobalMetadata();
+
+    const handleLocalChange = () => {
+      const localMetrics = getLocalDashboardMetrics('today');
+      setTodaySales(localMetrics.totalSales);
+      setPendingOrdersCount(localMetrics.pendingOrders);
+    };
+
+    window.addEventListener('waffelden_local_data_changed', handleLocalChange);
+    return () => window.removeEventListener('waffelden_local_data_changed', handleLocalChange);
   }, [fetchGlobalMetadata, refreshTrigger]);
 
   // Keyboard shortcuts (F2 for New Order, F1 for Dashboard)

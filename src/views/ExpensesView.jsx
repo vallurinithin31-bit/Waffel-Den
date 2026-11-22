@@ -12,11 +12,17 @@ import {
   X,
   FileText
 } from 'lucide-react';
+import { 
+  getLocalExpenses, 
+  saveLocalExpense, 
+  deleteLocalExpense, 
+  syncWithServer 
+} from '../utils/persistentSync.js';
 
 export default function ExpensesView() {
-  const [expenses, setExpenses] = useState([]);
+  const [expenses, setExpenses] = useState(() => getLocalExpenses());
   const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -54,6 +60,7 @@ export default function ExpensesView() {
   const fetchExpenses = async () => {
     setLoading(true);
     try {
+      await syncWithServer();
       let url = '/api/expenses?';
       if (categoryFilter !== 'All') url += `&category=${encodeURIComponent(categoryFilter)}`;
       if (startDate) url += `&start_date=${startDate}`;
@@ -71,10 +78,32 @@ export default function ExpensesView() {
       const exps = await res.json();
       const sum = await sumRes.json();
 
-      setExpenses(exps);
-      setSummary(sum);
+      const local = getLocalExpenses();
+      if (Array.isArray(exps) && exps.length > 0) {
+        setExpenses(exps);
+        setSummary(sum);
+        exps.forEach(e => saveLocalExpense(e));
+      } else if (local.length > 0) {
+        let filtered = [...local];
+        if (categoryFilter !== 'All') filtered = filtered.filter(e => e.category === categoryFilter);
+        if (startDate) filtered = filtered.filter(e => e.date >= startDate);
+        if (endDate) filtered = filtered.filter(e => e.date <= endDate);
+        setExpenses(filtered);
+        const total = filtered.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
+        setSummary({
+          totalExpenses: total,
+          operatingExpenses: total,
+          cashRegisterExpenses: filtered.filter(e => e.paid_from_cash_register).reduce((acc, e) => acc + (Number(e.amount) || 0), 0),
+          count: filtered.length
+        });
+      } else {
+        setExpenses([]);
+        setSummary(sum);
+      }
     } catch (err) {
-      console.error(err);
+      console.warn('Network notice, showing local expenses:', err);
+      const local = getLocalExpenses();
+      setExpenses(local);
     } finally {
       setLoading(false);
     }
@@ -145,20 +174,28 @@ export default function ExpensesView() {
         throw new Error(err.error || 'Failed to save expense');
       }
 
+      const savedExp = await res.json();
+      saveLocalExpense(savedExp || { ...payload, id: editingExpense?.id || Date.now() });
+
       setModalOpen(false);
       fetchExpenses();
     } catch (err) {
-      setErrorMsg(err.message);
+      // Even if network failed, save locally
+      saveLocalExpense({ ...payload, id: editingExpense?.id || Date.now() });
+      setModalOpen(false);
+      fetchExpenses();
     }
   };
 
   const handleDeleteExpense = async (id) => {
     if (!confirm('Are you sure you want to delete this expense entry?')) return;
     try {
+      deleteLocalExpense(id);
       const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
       if (res.ok) fetchExpenses();
     } catch (err) {
       console.error(err);
+      fetchExpenses();
     }
   };
 

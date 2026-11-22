@@ -17,6 +17,12 @@ import {
   FileText
 } from 'lucide-react';
 import ReceiptModal from '../components/ReceiptModal.jsx';
+import { 
+  saveLocalOrder, 
+  saveLocalCustomProduct, 
+  getLocalCustomProducts, 
+  getLocalOrders 
+} from '../utils/persistentSync.js';
 
 const categoryIcons = {
   "Belgium Waffle's": '🧇',
@@ -136,8 +142,37 @@ export default function NewOrderView({ settings = {}, onOrderCreated }) {
         }
       }
 
-      if (prods.length > 0) {
-        setProducts(prods);
+      const localCustom = getLocalCustomProducts();
+      const combinedProds = [...prods];
+      for (const cp of localCustom) {
+        if (!combinedProds.some(p => p.name.trim().toLowerCase() === cp.name.trim().toLowerCase())) {
+          combinedProds.push(cp);
+        }
+      }
+
+      // Calculate highest order number considering local orders
+      const localOrders = getLocalOrders();
+      if (localOrders.length > 0) {
+        let maxNum = 0;
+        for (const o of localOrders) {
+          const m = o.order_number?.match(/WD-(\d+)/i);
+          if (m) {
+            const val = parseInt(m[1], 10);
+            if (val > maxNum) maxNum = val;
+          }
+        }
+        if (maxNum > 0) {
+          const nextVal = maxNum + 1;
+          const localNextNum = `WD-${String(nextVal).padStart(3, '0')}`;
+          const serverNumVal = parseInt(nextNum.replace(/\D/g, '') || '0', 10);
+          if (nextVal > serverNumVal) {
+            nextNum = localNextNum;
+          }
+        }
+      }
+
+      if (combinedProds.length > 0) {
+        setProducts(combinedProds);
         setCategories(cats);
         setOrderNumber(nextNum);
       } else {
@@ -203,8 +238,40 @@ export default function NewOrderView({ settings = {}, onOrderCreated }) {
           const newProd = await res.json();
           createdProductId = newProd.id;
           finalUnitCost = newProd.total_unit_cost || 0;
+          saveLocalCustomProduct(newProd);
           fetchInitialData();
+        } else {
+          // Even if server failed, save locally
+          saveLocalCustomProduct({
+            id: Date.now(),
+            name: quickItemName.trim(),
+            category_name: finalCategory,
+            description: quickItemNotes.trim(),
+            selling_price: price,
+            ingredient_cost: 0,
+            prep_cost: 0,
+            packaging_cost: 0,
+            total_unit_cost: 0,
+            expected_profit: price,
+            profit_margin_pct: 100,
+            is_active: 1
+          });
         }
+      } else {
+        saveLocalCustomProduct({
+          id: Date.now(),
+          name: quickItemName.trim(),
+          category_name: finalCategory,
+          description: quickItemNotes.trim(),
+          selling_price: price,
+          ingredient_cost: 0,
+          prep_cost: 0,
+          packaging_cost: 0,
+          total_unit_cost: 0,
+          expected_profit: price,
+          profit_margin_pct: 100,
+          is_active: 1
+        });
       }
 
       // Add directly to active cart
@@ -373,6 +440,7 @@ export default function NewOrderView({ settings = {}, onOrderCreated }) {
       }
 
       const created = await res.json();
+      saveLocalOrder(created);
       setSavedOrder(created);
       setShowReceipt(true);
       if (onOrderCreated) onOrderCreated(created);

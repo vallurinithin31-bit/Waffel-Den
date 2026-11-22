@@ -15,10 +15,16 @@ import {
   FileText
 } from 'lucide-react';
 import ReceiptModal from '../components/ReceiptModal.jsx';
+import { 
+  getLocalOrders, 
+  saveLocalOrder, 
+  updateLocalOrderStatus, 
+  syncWithServer 
+} from '../utils/persistentSync.js';
 
 export default function OrdersView({ settings = {} }) {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState(() => getLocalOrders());
+  const [loading, setLoading] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,11 +44,18 @@ export default function OrdersView({ settings = {} }) {
 
   useEffect(() => {
     fetchOrders();
+
+    const handleLocalUpdate = () => {
+      setOrders(getLocalOrders());
+    };
+    window.addEventListener('waffelden_local_data_changed', handleLocalUpdate);
+    return () => window.removeEventListener('waffelden_local_data_changed', handleLocalUpdate);
   }, [statusFilter, paymentFilter, startDate, endDate]);
 
   const fetchOrders = async () => {
     setLoading(true);
     try {
+      await syncWithServer();
       let url = '/api/orders?limit=150';
       if (statusFilter !== 'All') url += `&status=${statusFilter}`;
       if (paymentFilter !== 'All') url += `&payment_method=${paymentFilter}`;
@@ -52,9 +65,32 @@ export default function OrdersView({ settings = {} }) {
 
       const res = await fetch(url);
       const data = await res.json();
-      setOrders(data);
+      
+      const local = getLocalOrders();
+      if (Array.isArray(data) && data.length > 0) {
+        setOrders(data);
+        data.forEach(o => saveLocalOrder(o));
+      } else if (local.length > 0) {
+        let filtered = [...local];
+        if (statusFilter !== 'All') filtered = filtered.filter(o => o.order_status === statusFilter);
+        if (paymentFilter !== 'All') filtered = filtered.filter(o => o.payment_method === paymentFilter);
+        if (startDate) filtered = filtered.filter(o => o.order_date >= startDate);
+        if (endDate) filtered = filtered.filter(o => o.order_date <= endDate);
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          filtered = filtered.filter(o => 
+            o.order_number?.toLowerCase().includes(q) || 
+            o.customer_name?.toLowerCase().includes(q) ||
+            o.customer_phone?.includes(q)
+          );
+        }
+        setOrders(filtered);
+      } else {
+        setOrders([]);
+      }
     } catch (err) {
-      console.error('Failed to fetch orders:', err);
+      console.warn('Network notice, displaying local orders:', err);
+      setOrders(getLocalOrders());
     } finally {
       setLoading(false);
     }
@@ -67,6 +103,13 @@ export default function OrdersView({ settings = {} }) {
 
   const updateOrderStatus = async (orderId, newStatus, reason = '') => {
     try {
+      const targetOrder = orders.find(o => o.id === orderId);
+      if (targetOrder?.order_number) {
+        updateLocalOrderStatus(targetOrder.order_number, { 
+          order_status: newStatus, 
+          cancelled_reason: reason 
+        });
+      }
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -89,11 +132,23 @@ export default function OrdersView({ settings = {} }) {
   const handleUpdatePayment = async () => {
     if (!paymentModalOrder) return;
     try {
+      const amt = Number(paymentAmount) || 0;
+      const newPaid = (paymentModalOrder.amount_paid || 0) + amt;
+      const newBal = Math.max(0, (paymentModalOrder.final_total || 0) - newPaid);
+      const newPayStatus = newBal <= 0 ? 'Paid' : 'Partial';
+
+      updateLocalOrderStatus(paymentModalOrder.order_number, {
+        amount_paid: newPaid,
+        outstanding_balance: newBal,
+        payment_status: newPayStatus,
+        payment_method: paymentMethodChoice
+      });
+
       const res = await fetch(`/api/orders/${paymentModalOrder.id}/payment`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount_paid: Number(paymentAmount),
+          amount_paid: amt,
           payment_method: paymentMethodChoice
         })
       });

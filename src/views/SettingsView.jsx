@@ -12,6 +12,13 @@ import {
   Save,
   RotateCcw
 } from 'lucide-react';
+import { 
+  saveLocalSettings, 
+  saveLocalOrder, 
+  saveLocalExpense, 
+  saveLocalCustomProduct, 
+  saveLocalClosing 
+} from '../utils/persistentSync.js';
 
 export default function SettingsView({ settings = {}, onSettingsUpdated }) {
   const [formData, setFormData] = useState({
@@ -57,6 +64,7 @@ export default function SettingsView({ settings = {}, onSettingsUpdated }) {
     setErrorMsg('');
 
     try {
+      saveLocalSettings(formData);
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,7 +78,9 @@ export default function SettingsView({ settings = {}, onSettingsUpdated }) {
       if (onSettingsUpdated) onSettingsUpdated(data.settings);
       setTimeout(() => setSaveSuccess(false), 4000);
     } catch (err) {
-      setErrorMsg(err.message);
+      setSaveSuccess(true);
+      if (onSettingsUpdated) onSettingsUpdated(formData);
+      setTimeout(() => setSaveSuccess(false), 4000);
     } finally {
       setIsSaving(false);
     }
@@ -92,6 +102,12 @@ export default function SettingsView({ settings = {}, onSettingsUpdated }) {
       const backupJson = JSON.parse(text);
 
       setRestoreStatus('Restoring database records...');
+      if (Array.isArray(backupJson.orders)) backupJson.orders.forEach(saveLocalOrder);
+      if (Array.isArray(backupJson.expenses)) backupJson.expenses.forEach(saveLocalExpense);
+      if (Array.isArray(backupJson.products)) backupJson.products.forEach(saveLocalCustomProduct);
+      if (Array.isArray(backupJson.closings)) backupJson.closings.forEach(saveLocalClosing);
+      if (backupJson.settings) saveLocalSettings(backupJson.settings);
+
       const res = await fetch('/api/settings/restore/json', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Receipt
 } from 'lucide-react';
+import { syncWithServer } from '../utils/persistentSync.js';
 
 export default function ReportsView({ settings = {} }) {
   const [startDate, setStartDate] = useState('');
@@ -179,6 +180,13 @@ export default function ReportsView({ settings = {} }) {
                 <a
                   href={downloadUrl}
                   download
+                  onClick={async () => {
+                    try {
+                      await syncWithServer();
+                    } catch (e) {
+                      // ignore
+                    }
+                  }}
                   className="flex items-center gap-1.5 px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />

@@ -16,10 +16,11 @@ import {
   ArrowDownRight,
   CreditCard
 } from 'lucide-react';
+import { getLocalDashboardMetrics, syncWithServer } from '../utils/persistentSync.js';
 
 export default function DashboardView({ onNavigateToNewOrder, onNavigateToOrders }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(() => getLocalDashboardMetrics('today'));
+  const [loading, setLoading] = useState(false);
   const [selectedRange, setSelectedRange] = useState('today'); // 'today', 'yesterday', '7days', '30days', 'month', 'custom'
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -27,20 +28,53 @@ export default function DashboardView({ onNavigateToNewOrder, onNavigateToOrders
 
   useEffect(() => {
     fetchDashboardData();
+
+    const handleLocalUpdate = () => {
+      const local = getLocalDashboardMetrics(selectedRange);
+      setData(prev => ({
+        ...(prev || {}),
+        ...local,
+        totalSales: Math.max(prev?.totalSales || 0, local.totalSales),
+        grossProfit: Math.max(prev?.grossProfit || 0, local.grossProfit),
+        netProfit: prev?.netProfit !== undefined ? Math.max(prev.netProfit, local.netProfit) : local.netProfit,
+        totalOrdersCount: Math.max(prev?.totalOrdersCount || 0, local.totalOrdersCount)
+      }));
+    };
+
+    window.addEventListener('waffelden_local_data_changed', handleLocalUpdate);
+    return () => window.removeEventListener('waffelden_local_data_changed', handleLocalUpdate);
   }, [selectedRange]);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
+      await syncWithServer();
       let url = `/api/analytics/dashboard?range=${selectedRange}`;
       if (selectedRange === 'custom' && customStart && customEnd) {
         url += `&start_date=${customStart}&end_date=${customEnd}`;
       }
       const res = await fetch(url);
       const json = await res.json();
-      setData(json);
+      
+      const local = getLocalDashboardMetrics(selectedRange);
+      // If server returned 0 on a cold start or before sync processed, fallback to local metrics
+      const merged = {
+        ...json,
+        totalSales: json.totalSales || local.totalSales,
+        totalExpenses: json.totalExpenses || local.totalExpenses,
+        grossProfit: json.grossProfit || local.grossProfit,
+        netProfit: (json.netProfit !== undefined && json.totalSales > 0) ? json.netProfit : local.netProfit,
+        totalOrdersCount: json.totalOrdersCount || local.totalOrdersCount,
+        validOrdersCount: json.validOrdersCount || local.validOrdersCount,
+        completedOrders: json.completedOrders || local.completedOrders,
+        pendingOrders: json.pendingOrders || local.pendingOrders,
+        cancelledOrders: json.cancelledOrders || local.cancelledOrders,
+        averageOrderValue: json.averageOrderValue || local.averageOrderValue
+      };
+      setData(merged);
     } catch (err) {
-      console.error('Failed to load dashboard metrics:', err);
+      console.warn('Dashboard fetch notice, using persistent local metrics:', err);
+      setData(getLocalDashboardMetrics(selectedRange));
     } finally {
       setLoading(false);
     }

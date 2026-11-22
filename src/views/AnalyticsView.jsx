@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Info
 } from 'lucide-react';
+import { syncWithServer } from '../utils/persistentSync.js';
 
 export default function AnalyticsView() {
   const [data, setData] = useState(null);
@@ -26,6 +27,7 @@ export default function AnalyticsView() {
   const fetchDetailedAnalytics = async () => {
     setLoading(true);
     try {
+      await syncWithServer();
       let url = `/api/analytics/detailed?range=${range}`;
       if (range === 'custom' && customStart && customEnd) {
         url += `&start_date=${customStart}&end_date=${customEnd}`;

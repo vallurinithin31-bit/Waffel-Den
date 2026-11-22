@@ -13,6 +13,7 @@ import closingsRouter from './routes/closings.js';
 import analyticsRouter from './routes/analytics.js';
 import reportsRouter from './routes/reports.js';
 import settingsRouter from './routes/settings.js';
+import syncRouter from './routes/sync.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,6 +57,7 @@ mount('closings', closingsRouter);
 mount('analytics', analyticsRouter);
 mount('reports', reportsRouter);
 mount('settings', settingsRouter);
+mount('sync', syncRouter);
 
 // Health check
 app.get(['/api/health', '/health'], (req, res) => {
