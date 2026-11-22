@@ -58,9 +58,7 @@ app.get(['/api/health', '/health'], (req, res) => {
 });
 
 // Serve frontend build if dist directory exists and not on Vercel
-const distPath = fs.existsSync(path.join(__dirname, '..', 'dist'))
-  ? path.join(__dirname, '..', 'dist')
-  : path.join(__dirname, '..', 'client', 'dist');
+const distPath = path.join(__dirname, '..', 'dist');
 if (!process.env.VERCEL && fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   app.use((req, res, next) => {
