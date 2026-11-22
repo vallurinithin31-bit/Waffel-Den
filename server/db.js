@@ -338,6 +338,108 @@ function seedDefaultSettings() {
   }
 }
 
+export const DEFAULT_CATEGORIES = [
+  { id: 1, name: "Belgium Waffle's", sort_order: 1, color: '#f59e0b', icon: 'Waffle', active: 1 },
+  { id: 2, name: "Bubble Waffle's", sort_order: 2, color: '#d97706', icon: 'Sparkles', active: 1 },
+  { id: 3, name: "Brownie Cake's", sort_order: 3, color: '#451a03', icon: 'Cookie', active: 1 },
+  { id: 4, name: "Bowl Cake's", sort_order: 4, color: '#78350f', icon: 'Cake', active: 1 },
+  { id: 5, name: 'Non Veg Items', sort_order: 5, color: '#dc2626', icon: 'Drumstick', active: 1 },
+  { id: 6, name: 'Veg Items', sort_order: 6, color: '#16a34a', icon: 'Carrot', active: 1 },
+  { id: 7, name: 'Hot Snacks & Momos', sort_order: 7, color: '#ea580c', icon: 'Flame', active: 1 },
+  { id: 8, name: 'Sandwich', sort_order: 8, color: '#ca8a04', icon: 'Sandwich', active: 1 },
+  { id: 9, name: 'Mojito Drinks', sort_order: 9, color: '#0284c7', icon: 'GlassWater', active: 1 },
+  { id: 10, name: 'Extra Add-ons', sort_order: 10, color: '#8b5cf6', icon: 'PlusCircle', active: 1 }
+];
+
+export const RAW_MENU_PRODUCTS = [
+  // 1. Belgium Waffle's (Image 2)
+  { name: 'Dark Chocolate Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 39 },
+  { name: 'Milk Chocolate Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 39 },
+  { name: 'White Chocolate Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 39 },
+  { name: 'Triple Chocolate Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 49 },
+  { name: 'Kitkat Crunch Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 59 },
+  { name: 'Oreo Blast Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 59 },
+  { name: 'Choco Almond Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 69 },
+  { name: 'Caramel Club Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 69 },
+  { name: 'Naughty Nutella Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 69 },
+  { name: 'Lotus Biscoff Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 79 },
+  { name: 'Pistachio Delight Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 79 },
+  { name: 'Ferrero Rocher Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 79 },
+
+  // 2. Bubble Waffle's (Image 2)
+  { name: 'Dark Chocolate Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 139 },
+  { name: 'Milk Chocolate Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 149 },
+  { name: 'White Chocolate Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 149 },
+  { name: 'Triple Chocolate Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 159 },
+  { name: 'Kitkat Crunch Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 159 },
+  { name: 'Oreo Blast Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 159 },
+  { name: 'Choco Almond Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 169 },
+  { name: 'Caramel Club Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 169 },
+  { name: 'Naughty Nutella Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 169 },
+
+  // 3. Brownie Cake's (Image 2)
+  { name: 'Triple Chocolate Layer Brownie', category_name: "Brownie Cake's", selling_price: 79 },
+  { name: "Brownie Bite's With Nutella", category_name: "Brownie Cake's", selling_price: 89 },
+  { name: 'Brownie With Chocolate Crunch', category_name: "Brownie Cake's", selling_price: 109 },
+  { name: 'Kunaffa Chocolate Tub', category_name: "Brownie Cake's", selling_price: 139 },
+
+  // 4. Bowl Cake's (Image 2)
+  { name: 'Triple Choco Overload Bowl Cake', category_name: "Bowl Cake's", selling_price: 139 },
+  { name: 'Kitkat Crunch Bowl Cake', category_name: "Bowl Cake's", selling_price: 149 },
+  { name: 'Orea Bowl Cake', category_name: "Bowl Cake's", selling_price: 149 },
+  { name: 'Naughty Nutella Bowl Cake', category_name: "Bowl Cake's", selling_price: 170 },
+  { name: 'Ferrero Rocher Bowl Cake', category_name: "Bowl Cake's", selling_price: 159 },
+
+  // 5. Non Veg Items (Image 1)
+  { name: 'French Fries Chicken Loaded Bowl', category_name: 'Non Veg Items', selling_price: 149 },
+  { name: 'French Fries Chicken Cheese Bowl', category_name: 'Non Veg Items', selling_price: 169 },
+  { name: 'French Fries Chicken Kurekure Bowl', category_name: 'Non Veg Items', selling_price: 179 },
+  { name: 'French Fries Chicken Double Loaded Bowl', category_name: 'Non Veg Items', selling_price: 199 },
+
+  // 6. Veg Items (Image 1)
+  { name: 'French Fries Peri Peri Masala', category_name: 'Veg Items', selling_price: 49 },
+  { name: 'Cheese French Fries', category_name: 'Veg Items', selling_price: 59 },
+  { name: 'Veg Fingers', category_name: 'Veg Items', selling_price: 109 },
+  { name: 'Smiles', category_name: 'Veg Items', selling_price: 79 },
+  { name: 'Sweet Samosa', category_name: 'Veg Items', selling_price: 99 },
+  { name: 'Veg Cheese Ball', category_name: 'Veg Items', selling_price: 59 },
+
+  // 7. Hot Snacks & Momos (Image 2)
+  { name: 'Potato Twister Kurukure', category_name: 'Hot Snacks & Momos', selling_price: 69 },
+  { name: 'Potato Twister', category_name: 'Hot Snacks & Momos', selling_price: 49 },
+  { name: "Panner Momo's", category_name: 'Hot Snacks & Momos', selling_price: 79 },
+  { name: "Corn Cheese Momo's", category_name: 'Hot Snacks & Momos', selling_price: 89 },
+
+  // 8. Sandwich (Image 2)
+  { name: 'Veg Cheese Sandwich', category_name: 'Sandwich', selling_price: 49 },
+  { name: 'Sweetcorn Cheese Sandwich', category_name: 'Sandwich', selling_price: 69 },
+  { name: 'Panner Cheese Sandwich', category_name: 'Sandwich', selling_price: 79 },
+  { name: 'Chicken Cheese Sandwich', category_name: 'Sandwich', selling_price: 99 },
+
+  // 9. Mojito Drinks (Image 1)
+  { name: 'Blue Curacao Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
+  { name: 'Black Currant Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
+  { name: 'Watermelon Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
+  { name: 'Lime and Mint Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
+  { name: 'Blue Berry Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
+  { name: 'Mango Mojito', category_name: 'Mojito Drinks', selling_price: 49 }
+];
+
+export const DEFAULT_PRODUCTS = RAW_MENU_PRODUCTS.map((p, idx) => ({
+  id: idx + 1,
+  name: p.name,
+  category_name: p.category_name,
+  description: '',
+  selling_price: p.selling_price,
+  ingredient_cost: 0,
+  prep_cost: 0,
+  packaging_cost: 0,
+  total_unit_cost: 0,
+  expected_profit: p.selling_price,
+  profit_margin_pct: 100,
+  is_active: 1
+}));
+
 export function seedMenuFromCards(force = false) {
   if (force) {
     db.exec('DELETE FROM products; DELETE FROM categories;');
@@ -345,104 +447,15 @@ export function seedMenuFromCards(force = false) {
 
   const catCount = db.prepare('SELECT COUNT(*) as count FROM categories').get().count;
   if (catCount === 0 || force) {
-    const cats = [
-      { name: "Belgium Waffle's", sort: 1, color: '#f59e0b', icon: 'Waffle' },
-      { name: "Bubble Waffle's", sort: 2, color: '#d97706', icon: 'Sparkles' },
-      { name: "Brownie Cake's", sort: 3, color: '#451a03', icon: 'Cookie' },
-      { name: "Bowl Cake's", sort: 4, color: '#78350f', icon: 'Cake' },
-      { name: 'Non Veg Items', sort: 5, color: '#dc2626', icon: 'Drumstick' },
-      { name: 'Veg Items', sort: 6, color: '#16a34a', icon: 'Carrot' },
-      { name: 'Hot Snacks & Momos', sort: 7, color: '#ea580c', icon: 'Flame' },
-      { name: 'Sandwich', sort: 8, color: '#ca8a04', icon: 'Sandwich' },
-      { name: 'Mojito Drinks', sort: 9, color: '#0284c7', icon: 'GlassWater' },
-      { name: 'Extra Add-ons', sort: 10, color: '#8b5cf6', icon: 'PlusCircle' }
-    ];
-
-    const insCat = db.prepare('INSERT OR IGNORE INTO categories (name, sort_order, color, icon) VALUES (?, ?, ?, ?)');
-    for (const c of cats) {
-      insCat.run(c.name, c.sort, c.color, c.icon);
+    const insCat = db.prepare('INSERT OR IGNORE INTO categories (id, name, sort_order, color, icon, active) VALUES (?, ?, ?, ?, ?, 1)');
+    for (const c of DEFAULT_CATEGORIES) {
+      insCat.run(c.id, c.name, c.sort_order, c.color, c.icon);
     }
   }
 
   const prodCount = db.prepare('SELECT COUNT(*) as count FROM products').get().count;
   if (prodCount === 0 || force) {
     const { iso } = getISTTimestamp();
-
-    // Exactly from the user's uploaded menu photos.
-    // Notice: All initial costs start strictly at 0 until the user specifies them.
-    const realMenuProducts = [
-      // 1. Belgium Waffle's (Image 2)
-      { name: 'Dark Chocolate Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 39 },
-      { name: 'Milk Chocolate Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 39 },
-      { name: 'White Chocolate Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 39 },
-      { name: 'Triple Chocolate Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 49 },
-      { name: 'Kitkat Crunch Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 59 },
-      { name: 'Oreo Blast Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 59 },
-      { name: 'Choco Almond Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 69 },
-      { name: 'Caramel Club Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 69 },
-      { name: 'Naughty Nutella Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 69 },
-      { name: 'Lotus Biscoff Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 79 },
-      { name: 'Pistachio Delight Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 79 },
-      { name: 'Ferrero Rocher Belgium Waffle', category_name: "Belgium Waffle's", selling_price: 79 },
-
-      // 2. Bubble Waffle's (Image 2)
-      { name: 'Dark Chocolate Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 139 },
-      { name: 'Milk Chocolate Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 149 },
-      { name: 'White Chocolate Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 149 },
-      { name: 'Triple Chocolate Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 159 },
-      { name: 'Kitkat Crunch Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 159 },
-      { name: 'Oreo Blast Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 159 },
-      { name: 'Choco Almond Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 169 },
-      { name: 'Caramel Club Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 169 },
-      { name: 'Naughty Nutella Bubble Waffle', category_name: "Bubble Waffle's", selling_price: 169 },
-
-      // 3. Brownie Cake's (Image 2)
-      { name: 'Triple Chocolate Layer Brownie', category_name: "Brownie Cake's", selling_price: 79 },
-      { name: "Brownie Bite's With Nutella", category_name: "Brownie Cake's", selling_price: 89 },
-      { name: 'Brownie With Chocolate Crunch', category_name: "Brownie Cake's", selling_price: 109 },
-      { name: 'Kunaffa Chocolate Tub', category_name: "Brownie Cake's", selling_price: 139 },
-
-      // 4. Bowl Cake's (Image 2)
-      { name: 'Triple Choco Overload Bowl Cake', category_name: "Bowl Cake's", selling_price: 139 },
-      { name: 'Kitkat Crunch Bowl Cake', category_name: "Bowl Cake's", selling_price: 149 },
-      { name: 'Orea Bowl Cake', category_name: "Bowl Cake's", selling_price: 149 },
-      { name: 'Naughty Nutella Bowl Cake', category_name: "Bowl Cake's", selling_price: 170 },
-      { name: 'Ferrero Rocher Bowl Cake', category_name: "Bowl Cake's", selling_price: 159 },
-
-      // 5. Non Veg Items (Image 1)
-      { name: 'French Fries Chicken Loaded Bowl', category_name: 'Non Veg Items', selling_price: 149 },
-      { name: 'French Fries Chicken Cheese Bowl', category_name: 'Non Veg Items', selling_price: 169 },
-      { name: 'French Fries Chicken Kurekure Bowl', category_name: 'Non Veg Items', selling_price: 179 },
-      { name: 'French Fries Chicken Double Loaded Bowl', category_name: 'Non Veg Items', selling_price: 199 },
-
-      // 6. Veg Items (Image 1)
-      { name: 'French Fries Peri Peri Masala', category_name: 'Veg Items', selling_price: 49 },
-      { name: 'Cheese French Fries', category_name: 'Veg Items', selling_price: 59 },
-      { name: 'Veg Fingers', category_name: 'Veg Items', selling_price: 109 },
-      { name: 'Smiles', category_name: 'Veg Items', selling_price: 79 },
-      { name: 'Sweet Samosa', category_name: 'Veg Items', selling_price: 99 },
-      { name: 'Veg Cheese Ball', category_name: 'Veg Items', selling_price: 59 },
-
-      // 7. Hot Snacks & Momos (Image 2)
-      { name: 'Potato Twister Kurukure', category_name: 'Hot Snacks & Momos', selling_price: 69 },
-      { name: 'Potato Twister', category_name: 'Hot Snacks & Momos', selling_price: 49 },
-      { name: "Panner Momo's", category_name: 'Hot Snacks & Momos', selling_price: 79 },
-      { name: "Corn Cheese Momo's", category_name: 'Hot Snacks & Momos', selling_price: 89 },
-
-      // 8. Sandwich (Image 2)
-      { name: 'Veg Cheese Sandwich', category_name: 'Sandwich', selling_price: 49 },
-      { name: 'Sweetcorn Cheese Sandwich', category_name: 'Sandwich', selling_price: 69 },
-      { name: 'Panner Cheese Sandwich', category_name: 'Sandwich', selling_price: 79 },
-      { name: 'Chicken Cheese Sandwich', category_name: 'Sandwich', selling_price: 99 },
-
-      // 9. Mojito Drinks (Image 1)
-      { name: 'Blue Curacao Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
-      { name: 'Black Currant Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
-      { name: 'Watermelon Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
-      { name: 'Lime and Mint Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
-      { name: 'Blue Berry Mojito', category_name: 'Mojito Drinks', selling_price: 49 },
-      { name: 'Mango Mojito', category_name: 'Mojito Drinks', selling_price: 49 }
-    ];
 
     const insProd = db.prepare(`
       INSERT INTO products (
@@ -452,13 +465,13 @@ export function seedMenuFromCards(force = false) {
       ) VALUES (?, (SELECT id FROM categories WHERE name = ?), ?, '', ?, 0, 0, 0, 0, ?, 100, 1, ?, ?)
     `);
 
-    for (const p of realMenuProducts) {
+    for (const p of RAW_MENU_PRODUCTS) {
       insProd.run(
         p.name,
         p.category_name,
         p.category_name,
         p.selling_price,
-        p.selling_price, // Expected profit = selling price until cost is entered
+        p.selling_price,
         iso,
         iso
       );

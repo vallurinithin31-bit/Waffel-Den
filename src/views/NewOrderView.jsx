@@ -97,20 +97,52 @@ export default function NewOrderView({ settings = {}, onOrderCreated }) {
 
   const fetchInitialData = async () => {
     setLoading(true);
+    setErrorMsg('');
     try {
-      const [prodRes, catRes, numRes] = await Promise.all([
+      const [prodRes, catRes, numRes] = await Promise.allSettled([
         fetch('/api/products?active=1'),
         fetch('/api/products/categories'),
         fetch('/api/orders/next-number')
       ]);
 
-      const prods = await prodRes.json();
-      const cats = await catRes.json();
-      const numData = await numRes.json();
+      let prods = [];
+      let cats = [];
+      let nextNum = 'WD-001';
 
-      setProducts(prods);
-      setCategories(cats);
-      setOrderNumber(numData.order_number || 'WD-001');
+      if (prodRes.status === 'fulfilled' && prodRes.value.ok) {
+        try {
+          const data = await prodRes.value.json();
+          if (Array.isArray(data)) prods = data;
+        } catch (e) {
+          console.warn('Could not parse products JSON:', e);
+        }
+      }
+
+      if (catRes.status === 'fulfilled' && catRes.value.ok) {
+        try {
+          const data = await catRes.value.json();
+          if (Array.isArray(data)) cats = data;
+        } catch (e) {
+          console.warn('Could not parse categories JSON:', e);
+        }
+      }
+
+      if (numRes.status === 'fulfilled' && numRes.value.ok) {
+        try {
+          const data = await numRes.value.json();
+          if (data?.order_number) nextNum = data.order_number;
+        } catch (e) {
+          console.warn('Could not parse order number JSON:', e);
+        }
+      }
+
+      if (prods.length > 0) {
+        setProducts(prods);
+        setCategories(cats);
+        setOrderNumber(nextNum);
+      } else {
+        setErrorMsg('Failed to load products. Ensure the server is running.');
+      }
     } catch (err) {
       console.error('Failed to load menu:', err);
       setErrorMsg('Failed to load products. Ensure the server is running.');

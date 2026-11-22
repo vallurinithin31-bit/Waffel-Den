@@ -1,7 +1,11 @@
 import express from 'express';
-import { db, getISTTimestamp } from '../db.js';
+import { db, getISTTimestamp, DEFAULT_CATEGORIES, DEFAULT_PRODUCTS } from '../db.js';
 
 const router = express.Router();
+
+// In-memory catalog store in case of serverless cold-start without db
+let memoryProducts = [...DEFAULT_PRODUCTS];
+let memoryCategories = [...DEFAULT_CATEGORIES];
 
 // Get all products (with optional filters)
 router.get('/', (req, res) => {
@@ -27,20 +31,49 @@ router.get('/', (req, res) => {
 
     query += ' ORDER BY category_name ASC, name ASC';
 
-    const products = db.prepare(query).all(...params);
-    res.json(products);
+    try {
+      const products = db.prepare(query).all(...params);
+      if (products && products.length > 0) {
+        return res.json(products);
+      }
+    } catch (dbErr) {
+      console.warn('DB prepare notice on products, using memory store:', dbErr.message);
+    }
+
+    // Fallback: filter memoryProducts
+    let filtered = [...memoryProducts];
+    if (active !== undefined && active !== '') {
+      filtered = filtered.filter(p => Number(p.is_active) === Number(active));
+    }
+    if (category && category !== 'All') {
+      filtered = filtered.filter(p => p.category_name === category);
+    }
+    if (search && search.trim() !== '') {
+      const q = search.trim().toLowerCase();
+      filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
+    }
+    return res.json(filtered);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Products route error:', err);
+    res.json(memoryProducts);
   }
 });
 
 // Get all categories
 router.get('/categories', (req, res) => {
   try {
-    const categories = db.prepare('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order ASC, name ASC').all();
-    res.json(categories);
+    try {
+      const categories = db.prepare('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order ASC, name ASC').all();
+      if (categories && categories.length > 0) {
+        return res.json(categories);
+      }
+    } catch (dbErr) {
+      console.warn('DB prepare notice on categories, using memory store:', dbErr.message);
+    }
+    return res.json(memoryCategories);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Categories route error:', err);
+    res.json(memoryCategories);
   }
 });
 

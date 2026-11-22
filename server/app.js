@@ -30,6 +30,17 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Normalize URL for Vercel rewrites: if Vercel mapped to /api/index.js, restore from x-matched-path
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/index.js') || req.url.startsWith('/api/index')) {
+    const original = req.headers['x-matched-path'] || req.headers['x-now-route-matches'];
+    if (original && !original.includes('index.js')) {
+      req.url = original;
+    }
+  }
+  next();
+});
+
 // Helper to mount routes both with and without '/api' prefix (handles Vercel serverless url variations)
 const mount = (routePath, router) => {
   app.use(`/api/${routePath}`, router);
@@ -54,6 +65,27 @@ app.get(['/api/health', '/health'], (req, res) => {
     version: '1.0.0',
     platform: process.env.VERCEL ? 'vercel-serverless' : 'node-server',
     timestamp: new Date().toISOString()
+  });
+});
+
+// Root API info endpoint
+app.get(['/api', '/api/'], (req, res) => {
+  res.json({
+    status: 'online',
+    app: 'Waffel Den API',
+    endpoints: [
+      '/api/products',
+      '/api/products/categories',
+      '/api/orders',
+      '/api/orders/next-number',
+      '/api/expenses',
+      '/api/inventory',
+      '/api/closings',
+      '/api/analytics',
+      '/api/reports',
+      '/api/settings',
+      '/api/health'
+    ]
   });
 });
 
